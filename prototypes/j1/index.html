@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="description" content="Prototype J1 des interfaces coach et client de JBM.">
+    <title>JBM — Prototype J1</title>
+    <link rel="stylesheet" href="./styles.css?v=20260808.7">
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="#coach" aria-label="JBM, retour au prototype coach">
+        <span class="brand-mark" aria-hidden="true">J</span>
+        <span>
+          <strong>JBM</strong>
+          <small>Just Be Muscle</small>
+        </span>
+      </a>
+      <nav class="view-switcher" aria-label="Choisir le prototype">
+        <a class="view-tab" data-view-link="coach" href="#coach">Coach · Web</a>
+        <a class="view-tab" data-view-link="client" href="#client">Client · Mobile</a>
+      </nav>
+      <span class="prototype-pill">Prototype J1 · build 2026-08-08.7 · données fictives</span>
+    </header>
+
+    <main>
+      <section id="coach-view" class="view coach-view" aria-labelledby="coach-title">
+        <div class="coach-sidebar">
+          <div>
+            <p class="eyebrow">Programme</p>
+            <h1 id="coach-title">Chargement…</h1>
+            <p class="muted" id="coach-version"></p>
+          </div>
+
+          <div class="draft-card">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+              <strong>Brouillon local depuis v1</strong>
+              <p>La version publiée reste intacte.</p>
+            </div>
+          </div>
+
+          <div class="sidebar-heading">
+            <h2>Séances</h2>
+            <span id="session-count" class="count-badge">0</span>
+          </div>
+          <div id="session-list" class="session-list" role="list"></div>
+
+          <button id="duplicate-session" class="button button-secondary button-full" type="button">
+            <span aria-hidden="true">＋</span> Dupliquer la séance
+          </button>
+          <button id="reset-coach-draft" class="button button-secondary button-full" type="button">
+            <span aria-hidden="true">↺</span> Réinitialiser le brouillon
+          </button>
+
+          <div class="sidebar-note">
+            <strong>But de ce prototype</strong>
+            <p>Mesurer les gestes fréquents avant de choisir et industrialiser la grille.</p>
+          </div>
+        </div>
+
+        <div class="coach-workspace">
+          <div class="workspace-header">
+            <div>
+              <p class="eyebrow">Éditeur de prescription</p>
+              <h2 id="selected-session-name">Séance</h2>
+              <p class="muted"><span id="row-count">0</span> séries · sélection et navigation au clavier</p>
+            </div>
+            <div class="header-actions">
+              <button id="undo-action" class="button button-ghost" type="button" disabled>
+                <span aria-hidden="true">↶</span> Annuler
+              </button>
+              <button id="redo-action" class="button button-ghost" type="button" disabled>
+                <span aria-hidden="true">↷</span> Rétablir
+              </button>
+              <button id="open-client-preview" class="button button-primary" type="button">
+                Prévisualiser côté client
+              </button>
+            </div>
+          </div>
+
+          <section class="coach-toolbar" aria-label="Actions de la grille">
+            <div class="toolbar-group">
+              <span class="toolbar-label">Série</span>
+              <button id="insert-series-before" class="tool-button" type="button">＋ Avant</button>
+              <button id="insert-series-after" class="tool-button" type="button">＋ Après</button>
+              <button id="remove-series" class="tool-button tool-button-danger" type="button">− Supprimer</button>
+            </div>
+            <div class="toolbar-divider" aria-hidden="true"></div>
+            <div class="toolbar-group">
+              <span class="toolbar-label">Cellules</span>
+              <button id="copy-selection" class="tool-button" type="button">Copier</button>
+              <button id="paste-selection" class="tool-button" type="button" disabled>Coller ici</button>
+            </div>
+            <div class="toolbar-divider" aria-hidden="true"></div>
+            <div class="toolbar-group">
+              <span class="toolbar-label">Dupliquer</span>
+              <button id="duplicate-exercise" class="tool-button" type="button">Exercice complet</button>
+              <button id="duplicate-group" class="tool-button" type="button">Groupe / superset</button>
+            </div>
+            <div class="toolbar-divider" aria-hidden="true"></div>
+            <form id="bulk-edit-form" class="toolbar-group bulk-form">
+              <label for="bulk-field">Modification groupée</label>
+              <select id="bulk-field" name="field">
+                <option value="targetRir">RIR</option>
+                <option value="targetReps">Répétitions</option>
+                <option value="tempo">Tempo</option>
+                <option value="restSeconds">Repos</option>
+                <option value="technique">Technique</option>
+              </select>
+              <label class="sr-only" for="bulk-value">Nouvelle valeur</label>
+              <input id="bulk-value" name="value" value="1,5" inputmode="decimal">
+              <button id="apply-bulk-edit" class="tool-button tool-button-accent" type="submit">Appliquer</button>
+            </form>
+            <div class="toolbar-spacer"></div>
+            <button id="open-paste-dialog" class="tool-button" type="button">
+              <span aria-hidden="true">▣</span> Coller depuis Sheets
+            </button>
+          </section>
+
+          <section class="grid-card" aria-labelledby="grid-heading">
+            <div class="grid-caption">
+              <div>
+                <h3 id="grid-heading">Prescription structurée</h3>
+                <p>Maj + clic sélectionne une plage. ⌘/Ctrl + C puis ⌘/Ctrl + V la recopie.</p>
+                <p>Outils : utilisez ▾ pour choisir jusqu’à 6 valeurs, ou séparez-les par « ; ». Technique : facultative.</p>
+              </div>
+              <div class="grid-summaries">
+                <div class="selection-summary" aria-live="polite">
+                  <span id="selection-count">0</span> cellule(s) sélectionnée(s)
+                </div>
+                <div id="clipboard-summary" class="clipboard-summary" aria-live="polite">Aucune copie interne</div>
+              </div>
+            </div>
+            <div class="grid-scroll" tabindex="-1">
+              <table class="coach-grid" role="grid" aria-colcount="9" aria-describedby="grid-instructions">
+                <caption id="grid-instructions" class="sr-only">
+                  Grille de prescription. Utilisez les flèches pour naviguer, Maj plus clic pour étendre la sélection,
+                  puis Commande ou Contrôle C et V pour copier et coller un rectangle de cellules.
+                </caption>
+                <thead id="coach-grid-head"></thead>
+                <tbody id="coach-grid-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="workspace-footer">
+            <div class="metric">
+              <span class="metric-value" id="render-duration">—</span>
+              <span class="metric-label">rendu de la grille</span>
+            </div>
+            <div class="metric">
+              <span class="metric-value" id="undo-depth">0</span>
+              <span class="metric-label">actions annulables</span>
+            </div>
+            <p id="coach-activity" class="activity-message" aria-live="polite">Prêt pour le test coach.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="client-view" class="view client-view" aria-labelledby="client-title" hidden>
+        <div class="client-context">
+          <p class="eyebrow">Prototype mobile</p>
+          <h1 id="client-title">Saisir sans friction</h1>
+          <p>Cette maquette mesure la reprise, le préremplissage et la saisie à une main. Elle ne représente pas encore l'application Expo finale.</p>
+          <ul class="prototype-checklist">
+            <li><span aria-hidden="true">✓</span> Aucun défilement horizontal</li>
+            <li><span aria-hidden="true">✓</span> Journal courant prioritaire sur Préc.</li>
+            <li><span aria-hidden="true">✓</span> Sauvegarde locale idempotente</li>
+            <li><span aria-hidden="true">◷</span> Minuteur à évaluer</li>
+          </ul>
+          <button id="reset-client-state" class="button button-secondary" type="button">Réinitialiser la démonstration</button>
+        </div>
+
+        <div class="device-frame" aria-label="Aperçu de l'interface client sur téléphone">
+          <div class="device-status" aria-hidden="true">
+            <span>9:41</span>
+            <span>● ◒ ▰</span>
+          </div>
+          <div class="mobile-app">
+            <section id="today-screen" class="mobile-screen" aria-labelledby="today-heading">
+              <header class="mobile-header">
+                <div>
+                  <p class="mobile-date">Lundi 14 septembre</p>
+                  <h2 id="today-heading">Aujourd'hui</h2>
+                </div>
+                <button class="avatar-button" type="button" aria-label="Profil d'Alice, hors périmètre du prototype" title="Hors périmètre du prototype J1" disabled>AT</button>
+              </header>
+
+              <div class="welcome-row">
+                <p>Bonjour Alice</p>
+                <span class="sync-state"><span aria-hidden="true">●</span> Local</span>
+              </div>
+
+              <article class="today-session-card">
+                <div class="card-topline">
+                  <span id="today-session-status" class="session-status">En cours</span>
+                  <span id="today-progress">1 / 7 série</span>
+                </div>
+                <p id="today-session-eyebrow" class="eyebrow">Séance du jour</p>
+                <h3 id="today-session-name">Haut du corps Alpha</h3>
+                <p class="session-summary">3 exercices · environ 38 min</p>
+                <button id="resume-workout" class="mobile-primary-action" type="button">
+                  Reprendre la séance <span aria-hidden="true">→</span>
+                </button>
+              </article>
+
+              <article class="coach-note-card">
+                <div class="note-icon" aria-hidden="true">J</div>
+                <div>
+                  <p class="eyebrow">Note du coach · démonstration J1</p>
+                  <p id="coach-note"></p>
+                  <small>Cette note est fictive et propre au prototype.</small>
+                </div>
+              </article>
+
+              <section class="quick-tracking" aria-labelledby="tracking-heading">
+                <div class="section-heading-row">
+                  <h3 id="tracking-heading">Suivis facultatifs</h3>
+                  <span>Optionnel</span>
+                </div>
+                <div class="tracking-actions">
+                  <button type="button" title="Hors périmètre du prototype J1" disabled><span aria-hidden="true">⚖</span> Poids</button>
+                  <button type="button" title="Hors périmètre du prototype J1" disabled><span aria-hidden="true">☾</span> Sommeil</button>
+                  <button type="button" title="Hors périmètre du prototype J1" disabled><span aria-hidden="true">＋</span> Ajouter</button>
+                </div>
+              </section>
+            </section>
+
+            <section id="workout-screen" class="mobile-screen workout-screen" aria-labelledby="workout-heading" hidden>
+              <header class="workout-header">
+                <button id="back-to-today" class="icon-button" type="button" aria-label="Revenir à Aujourd'hui">←</button>
+                <div>
+                  <p id="workout-status-label" class="eyebrow">Séance en cours</p>
+                  <h2 id="workout-heading">Haut du corps Alpha</h2>
+                </div>
+                <span id="workout-progress" class="progress-badge">1 / 7</span>
+              </header>
+              <div class="progress-track" aria-hidden="true"><span id="progress-bar"></span></div>
+
+              <section class="timing-lab" aria-labelledby="timing-heading">
+                <div>
+                  <p class="eyebrow">Mode test J1</p>
+                  <h3 id="timing-heading">Chronométrer un geste</h3>
+                </div>
+                <div class="timing-actions">
+                  <button data-timing-mode="unchanged" type="button">Préremplie · 5 s</button>
+                  <button data-timing-mode="changed" type="button">Modifiée · 10 s</button>
+                </div>
+                <p id="timing-result" class="timing-result" aria-live="polite">Choisissez un scénario ; le chrono s'arrête à la validation.</p>
+              </section>
+
+              <div id="exercise-list" class="exercise-list"></div>
+
+              <section class="finish-card" aria-labelledby="finish-heading">
+                <p class="eyebrow">Facultatif</p>
+                <h3 id="finish-heading">Comment s'est passée la séance ?</h3>
+                <div class="indicator-grid">
+                  <label>Récupération <select data-indicator="recovery"><option value="">—</option></select></label>
+                  <label>Focus <select data-indicator="focus"><option value="">—</option></select></label>
+                  <label>Énergie <select data-indicator="energy"><option value="">—</option></select></label>
+                  <label>Motivation <select data-indicator="motivation"><option value="">—</option></select></label>
+                </div>
+                <label for="workout-comment">Commentaire</label>
+                <textarea id="workout-comment" rows="3" placeholder="Ajouter un commentaire (facultatif)"></textarea>
+                <p id="finish-status" class="timing-result" role="alert" hidden></p>
+                <button id="finish-workout" class="mobile-secondary-action" type="button">Terminer la séance</button>
+              </section>
+            </section>
+
+            <aside id="rest-timer" class="rest-timer" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="rest-heading" hidden>
+              <div>
+                <p class="eyebrow">Repos proposé</p>
+                <h2 id="rest-heading"><span id="rest-seconds">90</span> s</h2>
+                <p>Le prochain geste reste accessible.</p>
+              </div>
+              <button id="skip-rest" type="button">Passer</button>
+            </aside>
+
+            <nav class="mobile-nav" aria-label="Navigation principale du prototype client">
+              <button class="active" type="button" title="Hors périmètre du prototype J1" disabled><span aria-hidden="true">⌂</span> Aujourd'hui</button>
+              <button type="button" title="Hors périmètre du prototype J1" disabled><span aria-hidden="true">▤</span> Programme</button>
+              <button type="button" title="Hors périmètre du prototype J1" disabled><span aria-hidden="true">◌</span> Suivi</button>
+            </nav>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="tool-picker-dialog" class="prototype-dialog tool-picker-dialog" aria-labelledby="tool-picker-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Catalogue configurable</p>
+          <h2 id="tool-picker-title">Choisir les outils</h2>
+          <p>Exercice : <strong id="tool-picker-exercise"></strong>. Les choix sont appliqués à toutes ses séries.</p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer">×</button>
+      </form>
+      <label for="tool-picker-search">Rechercher dans les 52 valeurs initiales</label>
+      <input id="tool-picker-search" class="tool-picker-search" type="search" autocomplete="off" placeholder="Ex. poulie, banc, prise…">
+      <div class="tool-picker-summary">
+        <strong id="tool-picker-count" aria-live="polite">0 / 6 sélectionné</strong>
+        <button id="clear-tool-picker" class="button button-ghost" type="button">Tout retirer</button>
+      </div>
+      <div id="tool-picker-options" class="tool-picker-options" role="group" aria-label="Outils disponibles"></div>
+      <div class="dialog-actions">
+        <button id="cancel-tool-picker" class="button button-secondary" type="button">Annuler</button>
+        <button id="apply-tool-picker" class="button button-primary" type="button">Appliquer les choix</button>
+      </div>
+    </dialog>
+
+    <dialog id="paste-dialog" class="prototype-dialog" aria-labelledby="paste-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Import contrôlé</p>
+          <h2 id="paste-title">Coller depuis Google Sheets</h2>
+          <p>9 colonnes : groupe, exercice, outils, série, répétitions, RIR, tempo, repos, technique. Un ancien collage à 8 colonnes reste accepté avec une technique vide.</p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer">×</button>
+      </form>
+      <label for="paste-source">Données tabulées</label>
+      <textarea id="paste-source" rows="7" spellcheck="false" placeholder="Collez ici plusieurs lignes depuis Sheets"></textarea>
+      <div class="dialog-actions dialog-actions-split">
+        <button id="insert-paste-example" class="button button-ghost" type="button">Insérer un exemple mixte</button>
+        <button id="preview-paste" class="button button-primary" type="button">Analyser le collage</button>
+      </div>
+      <section id="paste-preview" class="paste-preview" aria-live="polite" hidden>
+        <div class="preview-summary">
+          <strong id="paste-valid-count">0 ligne valide</strong>
+          <span id="paste-invalid-count">0 erreur</span>
+        </div>
+        <div id="paste-preview-rows"></div>
+      </section>
+      <div class="dialog-actions">
+        <button id="cancel-paste" class="button button-secondary" type="button">Annuler</button>
+        <button id="confirm-paste" class="button button-primary" type="button" disabled>Ajouter les lignes valides</button>
+      </div>
+    </dialog>
+
+    <dialog id="client-preview-dialog" class="prototype-dialog preview-dialog" aria-labelledby="client-preview-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Lecture seule</p>
+          <h2 id="client-preview-title">Prévisualisation client du brouillon</h2>
+          <p>Cette vue reflète la grille locale sans modifier la version publiée.</p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer">×</button>
+      </form>
+      <div id="client-preview-content" class="client-preview-content"></div>
+    </dialog>
+
+    <datalist id="exercise-options"></datalist>
+    <datalist id="tool-options"></datalist>
+    <datalist id="technique-options"></datalist>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="./app.js?v=20260808.7"></script>
+  </body>
+</html>

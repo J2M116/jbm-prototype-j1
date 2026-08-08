@@ -1,0 +1,863 @@
+{
+  "schemaVersion": 1,
+  "fixtureId": "jbm-alpha-v1",
+  "synthetic": true,
+  "metadata": {
+    "description": "Jeu de données entièrement fictif pour le prototype J1 et le futur importeur J9.",
+    "locale": "fr-FR",
+    "timeZone": "Europe/Paris",
+    "canonicalMassUnit": "kg",
+    "identityNamespace": "fixtures.jbm.test",
+    "idStrategy": "Les alias stables sont les identifiants de la fixture ; le classeur dérive des UUIDv5 déterministes.",
+    "freeTextAllowlist": [
+      "Bonne séance.",
+      "Réglage fictif : siège 3",
+      "Réglage fictif : corde au cran 4",
+      "Commentaire fictif : mouvement stable"
+    ]
+  },
+  "actors": [
+    {
+      "id": "user:coach-alpha",
+      "role": "coach",
+      "displayName": "Coach Alpha",
+      "email": "coach.alpha@jbm.test"
+    },
+    {
+      "id": "user:client-alice",
+      "role": "client",
+      "displayName": "Alice Test",
+      "email": "alice.alpha@jbm.test"
+    },
+    {
+      "id": "user:coach-beta",
+      "role": "coach",
+      "displayName": "Coach Bêta",
+      "email": "coach.beta@jbm.test"
+    },
+    {
+      "id": "user:client-bob",
+      "role": "client",
+      "displayName": "Bob Test",
+      "email": "bob.beta@jbm.test"
+    }
+  ],
+  "coachClientRelations": [
+    {
+      "id": "coach-client:coach-alpha:alice",
+      "coachId": "user:coach-alpha",
+      "clientId": "user:client-alice",
+      "status": "active"
+    },
+    {
+      "id": "coach-client:coach-beta:bob",
+      "coachId": "user:coach-beta",
+      "clientId": "user:client-bob",
+      "status": "active"
+    }
+  ],
+  "catalog": {
+    "tools": [
+      {
+        "id": "tool:barbell",
+        "name": "Barre"
+      },
+      {
+        "id": "tool:dumbbells",
+        "name": "Haltères"
+      },
+      {
+        "id": "tool:cable",
+        "name": "Poulie"
+      },
+      {
+        "id": "tool:rope",
+        "name": "Corde"
+      }
+    ],
+    "muscles": [
+      {
+        "id": "muscle:pectorals",
+        "name": "Pectoraux"
+      },
+      {
+        "id": "muscle:triceps",
+        "name": "Triceps"
+      },
+      {
+        "id": "muscle:front-deltoid",
+        "name": "Deltoïde antérieur"
+      },
+      {
+        "id": "muscle:side-deltoid",
+        "name": "Deltoïde latéral"
+      },
+      {
+        "id": "muscle:rear-deltoid",
+        "name": "Deltoïde postérieur"
+      }
+    ],
+    "exercises": [
+      {
+        "id": "exercise:bench-press",
+        "name": "Développé couché",
+        "toolIds": [
+          "tool:barbell"
+        ],
+        "muscles": [
+          {
+            "muscleId": "muscle:pectorals",
+            "contribution": 1
+          },
+          {
+            "muscleId": "muscle:triceps",
+            "contribution": 0.5
+          },
+          {
+            "muscleId": "muscle:front-deltoid",
+            "contribution": 0.25
+          }
+        ]
+      },
+      {
+        "id": "exercise:lateral-raise",
+        "name": "Élévations latérales",
+        "toolIds": [
+          "tool:dumbbells"
+        ],
+        "muscles": [
+          {
+            "muscleId": "muscle:side-deltoid",
+            "contribution": 1
+          }
+        ]
+      },
+      {
+        "id": "exercise:face-pull",
+        "name": "Face pull",
+        "toolIds": [
+          "tool:cable",
+          "tool:rope"
+        ],
+        "muscles": [
+          {
+            "muscleId": "muscle:rear-deltoid",
+            "contribution": 1
+          }
+        ]
+      }
+    ]
+  },
+  "program": {
+    "id": "program:alpha-7d",
+    "name": "Alpha 7 jours",
+    "version": {
+      "id": "program-version:alpha-7d:v1",
+      "number": 1,
+      "status": "published",
+      "publishedAt": "2026-09-01T09:00:00+02:00"
+    },
+    "cycle": {
+      "id": "cycle:alpha-7d:v1",
+      "lengthDays": 7,
+      "days": [
+        {
+          "position": 1,
+          "plannedSessionId": "planned-session:upper-a"
+        },
+        {
+          "position": 2,
+          "plannedSessionId": null
+        },
+        {
+          "position": 3,
+          "plannedSessionId": null
+        },
+        {
+          "position": 4,
+          "plannedSessionId": null
+        },
+        {
+          "position": 5,
+          "plannedSessionId": null
+        },
+        {
+          "position": 6,
+          "plannedSessionId": null
+        },
+        {
+          "position": 7,
+          "plannedSessionId": null
+        }
+      ]
+    },
+    "session": {
+      "id": "planned-session:upper-a",
+      "name": "Haut du corps Alpha",
+      "cycleDayPosition": 1,
+      "groups": [
+        {
+          "id": "exercise-group:upper-a:a",
+          "label": "A",
+          "type": "simple",
+          "rounds": 1,
+          "restAfterRoundSeconds": null,
+          "memberIds": [
+            "planned-exercise:upper-a:a1"
+          ]
+        },
+        {
+          "id": "exercise-group:upper-a:b",
+          "label": "B",
+          "type": "superset",
+          "rounds": 2,
+          "restAfterRoundSeconds": 90,
+          "memberIds": [
+            "planned-exercise:upper-a:b1",
+            "planned-exercise:upper-a:b2"
+          ]
+        }
+      ],
+      "exercises": [
+        {
+          "id": "planned-exercise:upper-a:a1",
+          "catalogExerciseId": "exercise:bench-press",
+          "variantKey": "barbell-standard",
+          "groupId": "exercise-group:upper-a:a",
+          "label": "A1",
+          "position": 1,
+          "restSeconds": 120,
+          "tempo": {
+            "eccentric": 3,
+            "pause1": 1,
+            "concentric": 1,
+            "pause2": 0
+          },
+          "sets": [
+            {
+              "id": "planned-set:upper-a:a1:s1",
+              "rank": 1,
+              "targetRepsMin": 8,
+              "targetRepsMax": 10,
+              "targetRir": 2
+            },
+            {
+              "id": "planned-set:upper-a:a1:s2",
+              "rank": 2,
+              "targetRepsMin": 8,
+              "targetRepsMax": 10,
+              "targetRir": 2
+            },
+            {
+              "id": "planned-set:upper-a:a1:s3",
+              "rank": 3,
+              "targetRepsMin": 8,
+              "targetRepsMax": 10,
+              "targetRir": 2
+            }
+          ]
+        },
+        {
+          "id": "planned-exercise:upper-a:b1",
+          "catalogExerciseId": "exercise:lateral-raise",
+          "variantKey": "dumbbell-bilateral",
+          "groupId": "exercise-group:upper-a:b",
+          "label": "B1",
+          "position": 2,
+          "restSeconds": 0,
+          "tempo": null,
+          "sets": [
+            {
+              "id": "planned-set:upper-a:b1:s1",
+              "rank": 1,
+              "targetRepsMin": 12,
+              "targetRepsMax": 15,
+              "targetRir": 2
+            },
+            {
+              "id": "planned-set:upper-a:b1:s2",
+              "rank": 2,
+              "targetRepsMin": 12,
+              "targetRepsMax": 15,
+              "targetRir": 2
+            }
+          ]
+        },
+        {
+          "id": "planned-exercise:upper-a:b2",
+          "catalogExerciseId": "exercise:face-pull",
+          "variantKey": "cable-rope",
+          "groupId": "exercise-group:upper-a:b",
+          "label": "B2",
+          "position": 3,
+          "restSeconds": 90,
+          "tempo": null,
+          "sets": [
+            {
+              "id": "planned-set:upper-a:b2:s1",
+              "rank": 1,
+              "targetRepsMin": 12,
+              "targetRepsMax": 15,
+              "targetRir": 2
+            },
+            {
+              "id": "planned-set:upper-a:b2:s2",
+              "rank": 2,
+              "targetRepsMin": 12,
+              "targetRepsMax": 15,
+              "targetRir": 2
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "assignment": {
+    "id": "assignment:alice:alpha-7d",
+    "clientId": "user:client-alice",
+    "programId": "program:alpha-7d",
+    "startDate": "2026-09-07",
+    "timeZone": "Europe/Paris",
+    "revision": {
+      "id": "revision:alice:alpha-7d:v1:2026-09-07",
+      "programVersionId": "program-version:alpha-7d:v1",
+      "effectiveDate": "2026-09-07",
+      "cycleAnchorDate": "2026-09-07"
+    }
+  },
+  "workoutSnapshot": {
+    "logs": [
+      {
+        "id": "workout:alice:2026-09-07:upper-a",
+        "assignmentId": "assignment:alice:alpha-7d",
+        "plannedSessionId": "planned-session:upper-a",
+        "occurrenceDate": "2026-09-07",
+        "status": "completed",
+        "note": "Bonne séance.",
+        "indicators": {
+          "recovery": 4,
+          "focus": 4,
+          "energy": 3,
+          "motivation": 5,
+          "scaleMin": 1,
+          "scaleMax": 5
+        },
+        "setLogs": [
+          {
+            "id": "set-log:alice:2026-09-07:a1:s1",
+            "plannedSetId": "planned-set:upper-a:a1:s1",
+            "reps": 10,
+            "loadKg": 60,
+            "rir": 2,
+            "comment": null
+          },
+          {
+            "id": "set-log:alice:2026-09-07:a1:s2",
+            "plannedSetId": "planned-set:upper-a:a1:s2",
+            "reps": 9,
+            "loadKg": 60,
+            "rir": 0,
+            "comment": null
+          },
+          {
+            "id": "set-log:alice:2026-09-07:a1:s3",
+            "plannedSetId": "planned-set:upper-a:a1:s3",
+            "reps": 8,
+            "loadKg": 60,
+            "rir": 1.5,
+            "comment": "Commentaire fictif : mouvement stable"
+          },
+          {
+            "id": "set-log:alice:2026-09-07:b1:s1",
+            "plannedSetId": "planned-set:upper-a:b1:s1",
+            "reps": 15,
+            "loadKg": 8,
+            "rir": 2,
+            "comment": null
+          },
+          {
+            "id": "set-log:alice:2026-09-07:b1:s2",
+            "plannedSetId": "planned-set:upper-a:b1:s2",
+            "reps": 14,
+            "loadKg": 8,
+            "rir": 1.5,
+            "comment": null
+          },
+          {
+            "id": "set-log:alice:2026-09-07:b2:s1",
+            "plannedSetId": "planned-set:upper-a:b2:s1",
+            "reps": 15,
+            "loadKg": 25,
+            "rir": 2,
+            "comment": null
+          },
+          {
+            "id": "set-log:alice:2026-09-07:b2:s2",
+            "plannedSetId": "planned-set:upper-a:b2:s2",
+            "reps": 14,
+            "loadKg": 25,
+            "rir": null,
+            "comment": "Réglage fictif : siège 3"
+          }
+        ]
+      },
+      {
+        "id": "workout:alice:2026-09-14:upper-a",
+        "assignmentId": "assignment:alice:alpha-7d",
+        "plannedSessionId": "planned-session:upper-a",
+        "occurrenceDate": "2026-09-14",
+        "status": "in_progress",
+        "note": null,
+        "indicators": {
+          "recovery": 1,
+          "focus": 2,
+          "energy": null,
+          "motivation": null,
+          "scaleMin": 1,
+          "scaleMax": 5
+        },
+        "setLogs": [
+          {
+            "id": "set-log:alice:2026-09-14:b2:s2",
+            "plannedSetId": "planned-set:upper-a:b2:s2",
+            "reps": null,
+            "loadKg": 27.5,
+            "rir": 0.5,
+            "comment": "Réglage fictif : corde au cran 4"
+          }
+        ]
+      },
+      {
+        "id": "workout:alice:2026-09-21:upper-a",
+        "assignmentId": "assignment:alice:alpha-7d",
+        "plannedSessionId": "planned-session:upper-a",
+        "occurrenceDate": "2026-09-21",
+        "status": "skipped",
+        "skipReason": null,
+        "note": null,
+        "indicators": {
+          "recovery": null,
+          "focus": null,
+          "energy": null,
+          "motivation": null,
+          "scaleMin": 1,
+          "scaleMax": 5
+        },
+        "setLogs": []
+      }
+    ],
+    "pauseRequests": [
+      {
+        "id": "pause-request:alice:2026-09-28:2026-10-02",
+        "assignmentId": "assignment:alice:alpha-7d",
+        "requestedBy": "user:client-alice",
+        "requestedStartDate": "2026-09-28",
+        "requestedEndDate": "2026-10-02",
+        "reason": "vacation",
+        "status": "pending",
+        "requestedAt": "2026-09-20T18:00:00+02:00",
+        "decidedAt": null,
+        "decidedBy": null
+      },
+      {
+        "id": "pause-request:alice:2026-10-12:2026-10-16",
+        "assignmentId": "assignment:alice:alpha-7d",
+        "requestedBy": "user:client-alice",
+        "requestedStartDate": "2026-10-12",
+        "requestedEndDate": "2026-10-16",
+        "reason": "vacation",
+        "status": "accepted",
+        "requestedAt": "2026-09-25T18:00:00+02:00",
+        "decidedAt": "2026-09-26T09:00:00+02:00",
+        "decidedBy": "user:coach-alpha"
+      }
+    ],
+    "assignmentPauses": [
+      {
+        "id": "assignment-pause:alice:2026-10-12:2026-10-16",
+        "assignmentId": "assignment:alice:alpha-7d",
+        "startDate": "2026-10-12",
+        "endDate": "2026-10-16",
+        "createdBy": "user:coach-alpha",
+        "sourcePauseRequestId": "pause-request:alice:2026-10-12:2026-10-16"
+      }
+    ]
+  },
+  "legacyWorkbook": {
+    "file": "legacy/Exercices.synthetic.xlsx",
+    "sha256": "b7ca4d9d32714c3639ecbc7f76412dc2589dc8ff67bb06763f66d990bc97f6d0",
+    "expectedSheetOrder": [
+      "MATRICE",
+      "DONNÉES",
+      "BASE DE DONNÉES",
+      "Copie de Journal_Sessions",
+      "Copie de Journal_Séries",
+      "Sessions",
+      "Exercices",
+      "Séries",
+      "Journal_Sessions",
+      "Journal_Exercices",
+      "Journal_Séries"
+    ],
+    "structuredHeaders": {
+      "Copie de Journal_Sessions": [
+        "JSessionID",
+        "SessionID",
+        "Semaine",
+        "DateR",
+        "NoteC",
+        "Récupération",
+        "Focus",
+        "Energie",
+        "Motivation",
+        "Periode"
+      ],
+      "Copie de Journal_Séries": [
+        "JSerieID",
+        "JExerciceID",
+        "JSessionID",
+        "SessionID",
+        "ExerciceID",
+        "SerieID",
+        "NumSerie",
+        "Semaine",
+        "REPS_Real",
+        "POIDS",
+        "RIR_Real",
+        "ReP",
+        "RIR_Prevus",
+        "CCSerie",
+        "Periode"
+      ],
+      "Sessions": [
+        "SessionID",
+        "NomSession",
+        "Date",
+        "Notes"
+      ],
+      "Exercices": [
+        "ExerciceID",
+        "SessionID",
+        "NumeroExercice",
+        "NomExercice",
+        "Outils",
+        "Repos",
+        "MuscleCible",
+        "Precisions",
+        "Periode"
+      ],
+      "Séries": [
+        "SerieID",
+        "ExerciceID",
+        "NumSerie",
+        "NbReps",
+        "RIR",
+        "Tempo_E",
+        "Tempo_P1",
+        "Tempo_C",
+        "Tempo_P2",
+        "Periode"
+      ],
+      "Journal_Sessions": [
+        "JSessionID",
+        "SessionID",
+        "Semaine",
+        "DateR",
+        "NoteC",
+        "Récupération",
+        "Focus",
+        "Energie",
+        "Motivation",
+        "Periode"
+      ],
+      "Journal_Exercices": [
+        "JExerciceID",
+        "JSessionID",
+        "SessionID",
+        "ExerciceID",
+        "Semaine",
+        "NotesClient"
+      ],
+      "Journal_Séries": [
+        "JSerieID",
+        "JExerciceID",
+        "JSessionID",
+        "SessionID",
+        "ExerciceID",
+        "SerieID",
+        "NumSerie",
+        "Semaine",
+        "REPS_Real",
+        "POIDS",
+        "RIR_Real",
+        "ReP",
+        "RIR_Prevus",
+        "CCSerie",
+        "Periode"
+      ]
+    },
+    "precreatedWeeks": 6,
+    "encodedWorkoutIds": [
+      "workout:alice:2026-09-07:upper-a",
+      "workout:alice:2026-09-14:upper-a"
+    ],
+    "excludedCopyRows": {
+      "Copie de Journal_Sessions": 1,
+      "Copie de Journal_Séries": 1
+    },
+    "expectedCounts": {
+      "Sessions": 1,
+      "Exercices": 3,
+      "Séries": 7,
+      "Journal_Sessions": 6,
+      "Journal_Exercices": 18,
+      "Journal_Séries": 42,
+      "persistedJournalSessions": 2,
+      "persistedJournalExercises": 4,
+      "persistedJournalSeries": 8,
+      "ignoredEmptyJournalSessions": 4,
+      "ignoredEmptyJournalExercises": 14,
+      "ignoredEmptyJournalSeries": 34
+    }
+  },
+  "uiScenarios": {
+    "inputResolution": {
+      "priority": [
+        "currentSetLog",
+        "previousPerformance",
+        "empty"
+      ],
+      "rule": "Un journal courant est restauré intégralement, y compris ses valeurs nulles, sans fusion avec la performance précédente.",
+      "currentOverrides": [
+        {
+          "plannedSetId": "planned-set:upper-a:b2:s2",
+          "currentSetLogId": "set-log:alice:2026-09-14:b2:s2",
+          "expectedInput": {
+            "reps": null,
+            "loadKg": 27.5,
+            "rir": 0.5
+          },
+          "historicalReferenceDisplay": "14 × 25 kg"
+        }
+      ]
+    },
+    "previousPerformance": [
+      {
+        "plannedSetId": "planned-set:upper-a:a1:s1",
+        "display": "10 × 60 kg · RIR 2",
+        "prefill": {
+          "reps": 10,
+          "loadKg": 60,
+          "rir": 2
+        }
+      },
+      {
+        "plannedSetId": "planned-set:upper-a:a1:s2",
+        "display": "9 × 60 kg · RIR 0",
+        "prefill": {
+          "reps": 9,
+          "loadKg": 60,
+          "rir": 0
+        }
+      },
+      {
+        "plannedSetId": "planned-set:upper-a:a1:s3",
+        "display": "8 × 60 kg · RIR 1,5",
+        "prefill": {
+          "reps": 8,
+          "loadKg": 60,
+          "rir": 1.5
+        }
+      },
+      {
+        "plannedSetId": "planned-set:upper-a:b1:s1",
+        "display": "15 × 8 kg · RIR 2",
+        "prefill": {
+          "reps": 15,
+          "loadKg": 8,
+          "rir": 2
+        }
+      },
+      {
+        "plannedSetId": "planned-set:upper-a:b1:s2",
+        "display": "14 × 8 kg · RIR 1,5",
+        "prefill": {
+          "reps": 14,
+          "loadKg": 8,
+          "rir": 1.5
+        }
+      },
+      {
+        "plannedSetId": "planned-set:upper-a:b2:s1",
+        "display": "15 × 25 kg · RIR 2",
+        "prefill": {
+          "reps": 15,
+          "loadKg": 25,
+          "rir": 2
+        }
+      },
+      {
+        "plannedSetId": "planned-set:upper-a:b2:s2",
+        "display": "14 × 25 kg",
+        "prefill": {
+          "reps": 14,
+          "loadKg": 25,
+          "rir": null
+        }
+      }
+    ],
+    "timingActions": [
+      {
+        "id": "timing:unchanged-under-5s",
+        "plannedSetId": "planned-set:upper-a:a1:s3",
+        "precondition": "Aucun journal courant pour cette série ; les trois valeurs précédentes sont seulement préremplies.",
+        "input": {
+          "reps": 8,
+          "loadKg": 60,
+          "rir": 1.5
+        },
+        "maximumInteractionSeconds": 5
+      },
+      {
+        "id": "timing:changed-under-10s",
+        "plannedSetId": "planned-set:upper-a:a1:s2",
+        "precondition": "Aucun journal courant pour cette série ; les trois valeurs précédentes sont seulement préremplies.",
+        "input": {
+          "reps": 10,
+          "loadKg": 62.5,
+          "rir": 1.5
+        },
+        "maximumInteractionSeconds": 10
+      }
+    ],
+    "resume": {
+      "workoutId": "workout:alice:2026-09-14:upper-a",
+      "expectedWorkoutCountAfterRestart": 1,
+      "expectedExistingSetLogId": "set-log:alice:2026-09-14:b2:s2",
+      "expectedSetLogCountBeforeTimingActions": 1,
+      "expectedSetLogCountAfterTimingActions": 3,
+      "expectedTotalSetLogCountAfterTimingActions": 10
+    },
+    "vacationTimeline": [
+      {
+        "date": "2026-09-28",
+        "expectedCycleDay": 1,
+        "reason": "La demande en attente ne suspend pas le cycle."
+      },
+      {
+        "date": "2026-10-12",
+        "expectedCycleDay": 1,
+        "reason": "Premier jour de la pause validée."
+      },
+      {
+        "date": "2026-10-16",
+        "expectedCycleDay": 1,
+        "reason": "Le cycle reste figé pendant la pause incluse."
+      },
+      {
+        "date": "2026-10-17",
+        "expectedCycleDay": 1,
+        "reason": "Reprise sur le jour qui devait être réalisé avant la pause."
+      },
+      {
+        "date": "2026-10-24",
+        "expectedCycleDay": 1,
+        "reason": "Occurrence suivante après sept jours actifs."
+      }
+    ]
+  },
+  "negativeVectors": [
+    {
+      "field": "indicator",
+      "value": null,
+      "accepted": true,
+      "reason": "Absence facultative"
+    },
+    {
+      "field": "indicator",
+      "value": 1,
+      "accepted": true,
+      "reason": "Borne basse"
+    },
+    {
+      "field": "indicator",
+      "value": 5,
+      "accepted": true,
+      "reason": "Borne haute"
+    },
+    {
+      "field": "indicator",
+      "value": 0,
+      "accepted": false,
+      "reason": "Hors échelle, ne doit pas devenir une absence"
+    },
+    {
+      "field": "indicator",
+      "value": 6,
+      "accepted": false,
+      "reason": "Hors échelle"
+    },
+    {
+      "field": "rir",
+      "value": null,
+      "accepted": true,
+      "reason": "Absence facultative"
+    },
+    {
+      "field": "rir",
+      "value": 0,
+      "accepted": true,
+      "reason": "Valeur réelle distincte de l'absence"
+    },
+    {
+      "field": "rir",
+      "value": 1.5,
+      "accepted": true,
+      "reason": "Demi-point conservé sans arrondi"
+    }
+  ],
+  "expectations": {
+    "actors": 4,
+    "activeCoachClientRelations": 2,
+    "clientsWithMultipleActiveCoaches": 0,
+    "tools": 4,
+    "catalogExercises": 3,
+    "cycleDays": 7,
+    "plannedSessions": 1,
+    "executionGroups": 2,
+    "supersetGroups": 1,
+    "plannedExercises": 3,
+    "plannedSets": 7,
+    "workoutLogs": 3,
+    "completedWorkoutLogs": 1,
+    "inProgressWorkoutLogs": 1,
+    "skippedWorkoutLogs": 1,
+    "initialSetLogs": 8,
+    "completeSetLogTriplets": 6,
+    "setLogsMissingRirOnly": 1,
+    "setLogsMissingRepsOnly": 1,
+    "setLogsWithReps": 7,
+    "setLogsWithLoad": 8,
+    "setLogsWithRir": 7,
+    "setLogsWithRirZero": 1,
+    "setLogsWithRirOnePointFive": 2,
+    "setLogsWithHalfPointRir": 3,
+    "setLogsWithRirAbsent": 1,
+    "indicatorValuesPresent": 6,
+    "indicatorValuesAbsent": 6,
+    "indicatorHistogram": {
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 2,
+      "5": 1
+    },
+    "pauseRequests": 2,
+    "pendingPauseRequests": 1,
+    "acceptedPauseRequests": 1,
+    "assignmentPauses": 1,
+    "skippedWorkoutSetLogs": 0,
+    "previousPerformanceMatches": 7,
+    "orphanRelations": 0
+  }
+}
