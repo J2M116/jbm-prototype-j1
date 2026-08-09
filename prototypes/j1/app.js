@@ -5,6 +5,7 @@ import {
   applySpreadsheetPaste,
   buildClientPrototype,
   buildCoachPrototype,
+  canonicalizeCatalogValue,
   canonicalizeCatalogValues,
   catalogPickerOptions,
   coachValuesEqual,
@@ -14,6 +15,9 @@ import {
   duplicateSession,
   insertSeriesAtSelection,
   normalizeCoachValue,
+  formatRestDuration,
+  parseRepetitionTarget,
+  parseRestDuration,
   parseSpreadsheetPaste,
   pasteCoachRectangle,
   rectangularCellIds,
@@ -24,7 +28,7 @@ import {
   timingResult,
   updateCoachCell,
   upgradeCoachDraftModel
-} from "./prototype-state.mjs?v=20260808.8";
+} from "./prototype-state.mjs?v=20260809.1";
 
 const FIXTURE_URL = "../../sample-data/jbm-alpha.fixture.json";
 const PRESCRIPTION_CATALOG_URL = "../../sample-data/jbm-initial-prescription-catalog.json";
@@ -43,9 +47,13 @@ const PASTE_EXAMPLE = [
 const byId = (id) => document.getElementById(id);
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const displayValue = (value) => value === null || value === undefined ? "" : String(value).replace(".", ",");
-const displayCoachValue = (field, value) => field === "tools" && Array.isArray(value)
-  ? value.join(" ; ")
-  : displayValue(value);
+const displayCoachValue = (field, value) => {
+  if (field === "tools" && Array.isArray(value)) return value.join(" ; ");
+  if (field === "restSeconds" && value !== null && value !== undefined && value !== "") {
+    return formatRestDuration(value);
+  }
+  return displayValue(value);
+};
 const escapeHtml = (value) => String(value ?? "")
   .replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;")
@@ -64,6 +72,7 @@ let coachClipboard = null;
 let pastePreview = null;
 let exercisePickerContext = null;
 let toolPickerContext = null;
+let prescriptionPickerContext = null;
 let activeMobileScreen = "today";
 let timingTrial = null;
 let lastTimingResult = null;
@@ -110,6 +119,17 @@ const persistClient = (candidate = clientModel) => {
   }
 };
 
+const coachRowHasValidValues = (row) => {
+  try {
+    return COACH_COLUMNS.every((column) => coachValuesEqual(
+      normalizeCoachValue(column.key, row[column.key]),
+      row[column.key]
+    ));
+  } catch {
+    return false;
+  }
+};
+
 const isValidCoachModel = (candidate, fresh) => {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
   if (candidate.fixtureId !== fresh.fixtureId
@@ -136,6 +156,7 @@ const isValidCoachModel = (candidate, fresh) => {
         || typeof row.plannedSetId !== "string"
         || typeof row.plannedExerciseId !== "string"
         || typeof row.groupId !== "string"
+        || !["simple", "superset"].includes(row.groupType)
         || !Array.isArray(row.tools)
         || row.tools.length > MAX_TOOLS_PER_EXERCISE
         || row.tools.some((tool) => typeof tool !== "string" || tool.trim().length === 0)
@@ -143,7 +164,8 @@ const isValidCoachModel = (candidate, fresh) => {
         || typeof row.technique !== "string"
         || rowIds.has(row.id)
         || plannedSetIds.has(row.plannedSetId)
-        || COACH_COLUMNS.some((column) => !Object.hasOwn(row, column.key))) return false;
+        || COACH_COLUMNS.some((column) => !Object.hasOwn(row, column.key))
+        || !coachRowHasValidValues(row)) return false;
       rowIds.add(row.id);
       plannedSetIds.add(row.plannedSetId);
     }
@@ -342,8 +364,35 @@ const renderPrescriptionDatalists = () => {
     .join("");
   byId("exercise-options").innerHTML = renderOptions(prescriptionCatalog.exercises);
   byId("tool-options").innerHTML = renderOptions(prescriptionCatalog.tools);
+  byId("repetition-target-options").innerHTML = renderOptions(prescriptionCatalog.repetitionTargets);
+  byId("rest-preset-options").innerHTML = renderOptions(
+    prescriptionCatalog.restPresets.map((preset) => preset.label)
+  );
   byId("technique-options").innerHTML = renderOptions(prescriptionCatalog.techniques);
 };
+
+const catalogPickerPresentation = (field, row) => ({
+  exerciseName: {
+    label: `Choisir un exercice connu, ${row.exerciseName}, série ${row.setRank}`,
+    title: "Choisir un exercice dans le catalogue"
+  },
+  tools: {
+    label: `Choisir les outils, ${row.exerciseName}, série ${row.setRank}`,
+    title: "Choisir jusqu’à 6 outils dans le catalogue"
+  },
+  targetReps: {
+    label: `Choisir une cible de répétitions, ${row.exerciseName}, série ${row.setRank}`,
+    title: "Choisir une cible de répétitions ou de durée"
+  },
+  restSeconds: {
+    label: `Choisir le repos, ${row.exerciseName}, série ${row.setRank}`,
+    title: "Choisir une durée de repos"
+  },
+  technique: {
+    label: `Choisir la technique, ${row.exerciseName}, série ${row.setRank}`,
+    title: "Choisir une technique ou aucune"
+  }
+})[field] ?? null;
 
 const renderCoachGrid = (focusCellId = null) => {
   const startedAt = performance.now();
@@ -370,7 +419,7 @@ const renderCoachGrid = (focusCellId = null) => {
       const cellId = `${row.id}::${column.key}`;
       const isSelected = selected.has(cellId);
       const isAnchor = selection.anchor?.rowId === row.id && selection.anchor?.columnKey === column.key;
-      const inputMode = ["setRank", "restSeconds"].includes(column.key) ? "numeric"
+      const inputMode = column.key === "setRank" ? "numeric"
         : column.key === "targetRir" ? "decimal" : "text";
       const structuralAttributes = column.key === "setRank"
         ? ' readonly aria-readonly="true" title="Calculé d’après l’ordre des séries"'
@@ -378,27 +427,24 @@ const renderCoachGrid = (focusCellId = null) => {
       const listId = {
         exerciseName: "exercise-options",
         tools: "tool-options",
+        targetReps: "repetition-target-options",
+        restSeconds: "rest-preset-options",
         technique: "technique-options"
       }[column.key];
       const listAttribute = listId ? ` list="${listId}"` : "";
       const guidanceAttributes = column.key === "tools"
         ? ` placeholder="OUTIL 1 ; OUTIL 2" title="Séparez jusqu’à ${MAX_TOOLS_PER_EXERCISE} outils par un point-virgule"`
+        : column.key === "targetReps"
+          ? ' placeholder="8-10, MAX ou 0’45" title="Nombre, plage de répétitions, MAX ou durée"'
+          : column.key === "restSeconds"
+            ? ' placeholder="1’30" title="Durée lisible ou nombre historique de secondes"'
         : column.key === "technique"
           ? ' placeholder="Facultative" title="Une technique maximum ; laissez vide si aucune"'
           : "";
       const inputHtml = `<input value="${escapeHtml(displayCoachValue(column.key, row[column.key]))}" inputmode="${inputMode}"${listAttribute}${guidanceAttributes}
         aria-label="${escapeHtml(`${column.label}, ${row.exerciseName}, série ${row.setRank}`)}"
         data-row-id="${escapeHtml(row.id)}" data-column-key="${escapeHtml(column.key)}"${structuralAttributes}>`;
-      const picker = {
-        exerciseName: {
-          label: `Choisir un exercice connu, ${row.exerciseName}, série ${row.setRank}`,
-          title: "Choisir un exercice dans le catalogue"
-        },
-        tools: {
-          label: `Choisir les outils, ${row.exerciseName}, série ${row.setRank}`,
-          title: "Choisir jusqu’à 6 outils dans le catalogue"
-        }
-      }[column.key];
+      const picker = catalogPickerPresentation(column.key, row);
       const editorHtml = picker
         ? `<div class="catalog-cell-editor">${inputHtml}<button class="catalog-picker-button" type="button"
             aria-label="${escapeHtml(picker.label)}" aria-haspopup="dialog"
@@ -568,23 +614,14 @@ const syncCoachRowAccessibleLabels = (rows) => {
         `[data-cell-id="${CSS.escape(`${row.id}::${column.key}`)}"] input`
       );
       input?.setAttribute("aria-label", `${column.label}, ${row.exerciseName}, série ${row.setRank}`);
+      const picker = catalogPickerPresentation(column.key, row);
+      if (!picker) return;
+      const button = document.querySelector(
+        `[data-catalog-picker-row-id="${CSS.escape(row.id)}"]`
+        + `[data-catalog-picker-field="${CSS.escape(column.key)}"]`
+      );
+      button?.setAttribute("aria-label", picker.label);
     });
-    const exerciseButton = document.querySelector(
-      `[data-catalog-picker-row-id="${CSS.escape(row.id)}"]`
-      + '[data-catalog-picker-field="exerciseName"]'
-    );
-    exerciseButton?.setAttribute(
-      "aria-label",
-      `Choisir un exercice connu, ${row.exerciseName}, série ${row.setRank}`
-    );
-    const toolButton = document.querySelector(
-      `[data-catalog-picker-row-id="${CSS.escape(row.id)}"]`
-      + '[data-catalog-picker-field="tools"]'
-    );
-    toolButton?.setAttribute(
-      "aria-label",
-      `Choisir les outils, ${row.exerciseName}, série ${row.setRank}`
-    );
   });
 };
 
@@ -756,6 +793,36 @@ const tabLeavesCoachGrid = (rowId, columnKey, shiftKey) => {
   const currentIndex = rowIndex * COACH_COLUMNS.length + columnIndex;
   const lastIndex = rows.length * COACH_COLUMNS.length - 1;
   return shiftKey ? currentIndex === 0 : currentIndex === lastIndex;
+};
+
+const CATALOG_PICKER_FIELDS = new Set([
+  "exerciseName",
+  "tools",
+  "targetReps",
+  "restSeconds",
+  "technique"
+]);
+
+const adjacentCoachCell = (rowId, columnKey, offset) => {
+  const rows = selectedSession().rows;
+  const rowIndex = rows.findIndex((row) => row.id === rowId);
+  const columnIndex = COACH_COLUMNS.findIndex((column) => column.key === columnKey);
+  if (rowIndex < 0 || columnIndex < 0) return null;
+  const nextIndex = rowIndex * COACH_COLUMNS.length + columnIndex + offset;
+  if (nextIndex < 0 || nextIndex >= rows.length * COACH_COLUMNS.length) return null;
+  return {
+    rowId: rows[Math.floor(nextIndex / COACH_COLUMNS.length)].id,
+    columnKey: COACH_COLUMNS[nextIndex % COACH_COLUMNS.length].key
+  };
+};
+
+const focusCatalogPickerButton = ({ rowId, columnKey }) => {
+  const button = document.querySelector(
+    `[data-catalog-picker-row-id="${CSS.escape(rowId)}"]`
+    + `[data-catalog-picker-field="${CSS.escape(columnKey)}"]`
+  );
+  button?.focus({ preventScroll: true });
+  return Boolean(button);
 };
 
 const scheduleCoachGridRefresh = () => {
@@ -965,6 +1032,194 @@ const applyToolPicker = () => {
   }
 };
 
+const prescriptionPickerConfiguration = (field, row) => {
+  const restPresetLabels = prescriptionCatalog.restPresets.map((preset) => preset.label);
+  const matchingRestPreset = prescriptionCatalog.restPresets.find(
+    (preset) => preset.seconds === row.restSeconds
+  );
+  const configurations = {
+    targetReps: {
+      field,
+      title: "Choisir les répétitions",
+      description: `Série ${row.setRank} de « ${row.exerciseName} ». Le choix concerne uniquement cette série.`,
+      searchLabel: `Rechercher dans les ${prescriptionCatalog.repetitionTargets.length} cibles initiales`,
+      searchPlaceholder: "Ex. 8-10, MAX, 0’45…",
+      optionsLabel: "Cibles de répétitions disponibles",
+      applyLabel: "Appliquer la cible",
+      values: prescriptionCatalog.repetitionTargets,
+      currentValue: canonicalizeCatalogValue(prescriptionCatalog.repetitionTargets, row.targetReps),
+      toModelValue: (value) => value
+    },
+    restSeconds: {
+      field,
+      title: "Choisir le repos",
+      description: `Exercice « ${row.exerciseName} ». Le choix est appliqué à toutes ses séries.`,
+      searchLabel: `Rechercher dans les ${prescriptionCatalog.restPresets.length} durées initiales`,
+      searchPlaceholder: "Ex. 1’30, 3’, 5’30…",
+      optionsLabel: "Durées de repos disponibles",
+      applyLabel: "Appliquer le repos",
+      values: restPresetLabels,
+      currentValue: canonicalizeCatalogValue(
+        restPresetLabels,
+        matchingRestPreset?.label ?? formatRestDuration(row.restSeconds)
+      ),
+      toModelValue: (value) => prescriptionCatalog.restPresets.find(
+        (preset) => preset.label === value
+      )?.seconds ?? parseRestDuration(value)
+    },
+    technique: {
+      field,
+      title: "Choisir la technique",
+      description: `Série ${row.setRank} de « ${row.exerciseName} ». Une série peut ne comporter aucune technique.`,
+      searchLabel: `Rechercher dans les ${prescriptionCatalog.techniques.length} techniques initiales`,
+      searchPlaceholder: "Ex. superset, myoreps, drop…",
+      optionsLabel: "Techniques disponibles",
+      applyLabel: "Appliquer la technique",
+      values: prescriptionCatalog.techniques,
+      currentValue: row.technique
+        ? canonicalizeCatalogValue(prescriptionCatalog.techniques, row.technique)
+        : "",
+      toModelValue: (value) => value,
+      optional: true
+    }
+  };
+  return configurations[field] ?? null;
+};
+
+const renderPrescriptionPickerOptions = () => {
+  if (!prescriptionPickerContext) return;
+  const row = selectedSession()?.rows.find(
+    (candidate) => candidate.id === prescriptionPickerContext.rowId
+  );
+  if (!row) return;
+  const configuration = prescriptionPickerConfiguration(prescriptionPickerContext.field, row);
+  if (!configuration) return;
+  const query = byId("prescription-picker-search").value;
+  let catalogQuery = query.replace(/[-—−]/gu, "–").replace(/['′]/gu, "’");
+  if (query.trim()) {
+    try {
+      catalogQuery = prescriptionPickerContext.field === "targetReps"
+          ? parseRepetitionTarget(query).label
+          : query;
+    } catch {
+      // Une recherche partielle reste utile même si elle ne forme pas encore une valeur métier complète.
+    }
+  }
+  const queryForEmpty = query.trim().toLocaleLowerCase("fr-FR");
+  const emptyOption = configuration.optional
+    && (!queryForEmpty || "aucune technique".includes(queryForEmpty))
+    ? [{ value: "", selected: prescriptionPickerContext.value === "", legacy: false, empty: true }]
+    : [];
+  const options = [
+    ...emptyOption,
+    ...catalogPickerOptions(configuration.values, prescriptionPickerContext.value, catalogQuery)
+  ];
+
+  byId("prescription-picker-options").innerHTML = options.length > 0
+    ? options.map((option) => `<label class="tool-picker-option ${option.selected ? "is-selected" : ""} ${option.legacy ? "is-legacy" : ""} ${option.empty ? "is-empty" : ""}">
+        <input type="radio" name="prescription-picker-choice" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""}>
+        <span><strong>${escapeHtml(option.empty ? "Aucune technique" : option.value)}</strong>${option.legacy ? "<small>Valeur existante hors catalogue</small>" : ""}</span>
+      </label>`).join("")
+    : '<p class="tool-picker-empty">Aucune valeur ne correspond à cette recherche.</p>';
+
+  const resultLabel = `${options.length} résultat${options.length > 1 ? "s" : ""}`;
+  byId("prescription-picker-count").textContent = `${resultLabel} · 1 valeur sélectionnée`;
+  document.querySelectorAll('#prescription-picker-options input[type="radio"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      prescriptionPickerContext.value = radio.value;
+      document.querySelectorAll("#prescription-picker-options .tool-picker-option").forEach((label) => {
+        label.classList.toggle("is-selected", label.querySelector("input")?.checked === true);
+      });
+    });
+    radio.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!radio.checked) {
+        radio.checked = true;
+        prescriptionPickerContext.value = radio.value;
+      }
+      applyPrescriptionPicker();
+    });
+  });
+};
+
+const openPrescriptionPicker = (rowId, field) => {
+  if (!prepareCoachCommand()) return;
+  const row = selectedSession()?.rows.find((candidate) => candidate.id === rowId);
+  if (!row) return;
+  const configuration = prescriptionPickerConfiguration(field, row);
+  if (!configuration) return;
+  prescriptionPickerContext = { rowId, field, value: configuration.currentValue };
+  byId("prescription-picker-title").textContent = configuration.title;
+  byId("prescription-picker-description").textContent = configuration.description;
+  byId("prescription-picker-current").textContent = configuration.currentValue || "Aucune technique";
+  byId("prescription-picker-search-label").textContent = configuration.searchLabel;
+  byId("prescription-picker-search").placeholder = configuration.searchPlaceholder;
+  byId("prescription-picker-search").value = "";
+  byId("prescription-picker-options").setAttribute("aria-label", configuration.optionsLabel);
+  byId("apply-prescription-picker").textContent = configuration.applyLabel;
+  renderPrescriptionPickerOptions();
+  byId("prescription-picker-dialog").showModal();
+  const selectedOption = document.querySelector('#prescription-picker-options input[type="radio"]:checked');
+  if (selectedOption) selectedOption.scrollIntoView({ block: "center" });
+  else byId("prescription-picker-options").scrollTop = 0;
+  byId("prescription-picker-search").focus({ preventScroll: true });
+};
+
+const closePrescriptionPicker = () => {
+  if (byId("prescription-picker-dialog").open) byId("prescription-picker-dialog").close();
+  prescriptionPickerContext = null;
+};
+
+const applyPrescriptionPicker = () => {
+  if (!prescriptionPickerContext) return;
+  const session = selectedSession();
+  const row = session?.rows.find((candidate) => candidate.id === prescriptionPickerContext.rowId);
+  if (!row) {
+    closePrescriptionPicker();
+    return;
+  }
+  const configuration = prescriptionPickerConfiguration(prescriptionPickerContext.field, row);
+  if (!configuration) return;
+  const field = prescriptionPickerContext.field;
+  const nextCell = { rowId: row.id, columnKey: field };
+  selection = { anchor: nextCell, focus: nextCell };
+  try {
+    const nextValue = configuration.toModelValue(prescriptionPickerContext.value);
+    const next = updateCoachCell(
+      coachModel,
+      coachModel.selectedSessionId,
+      row.id,
+      field,
+      nextValue
+    );
+    const updatedRow = next.sessions
+      .find((candidate) => candidate.id === next.selectedSessionId)
+      ?.rows.find((candidate) => candidate.id === row.id);
+    if (coachValuesEqual(row[field], updatedRow?.[field])) {
+      closePrescriptionPicker();
+      renderCoachGrid(`${row.id}::${field}`);
+      setCoachActivity("Sélection refermée sans changement.");
+      return;
+    }
+    const affectedSeriesCount = field === "restSeconds"
+      ? session.rows.filter((candidate) => candidate.plannedExerciseId === row.plannedExerciseId).length
+      : 1;
+    const activity = field === "restSeconds"
+      ? `Repos ${formatRestDuration(updatedRow.restSeconds)} appliqué à ${affectedSeriesCount} série(s) en une action annulable.`
+      : field === "technique"
+        ? `${updatedRow.technique ? `Technique « ${updatedRow.technique} » appliquée` : "Technique retirée"} sur la série ${row.setRank} en une action annulable.`
+        : `Cible « ${updatedRow.targetReps} » appliquée à la série ${row.setRank} en une action annulable.`;
+    const committed = commitCoachModel(next, activity, false);
+    if (!committed) return;
+    closePrescriptionPicker();
+    renderCoachGrid(`${row.id}::${field}`);
+  } catch (error) {
+    showToast(error.message);
+    setCoachActivity(`Valeur non appliquée : ${error.message}`);
+  }
+};
+
 const bindCoachGridEvents = () => {
   document.querySelectorAll(".grid-cell").forEach((cell) => {
     cell.addEventListener("pointerdown", (event) => {
@@ -1023,7 +1278,7 @@ const bindCoachGridEvents = () => {
       if (!navigationKeys.has(event.key)) return;
       if (event.key === "Tab"
         && !event.shiftKey
-        && ["exerciseName", "tools"].includes(input.dataset.columnKey)) {
+        && CATALOG_PICKER_FIELDS.has(input.dataset.columnKey)) {
         event.preventDefault();
         if (!commitCoachInput(input, false)) return;
         syncCoachInputFromModel(input);
@@ -1033,39 +1288,19 @@ const bindCoachGridEvents = () => {
           focus: { rowId: input.dataset.rowId, columnKey }
         };
         repaintCoachSelection();
-        document.querySelector(
-          `[data-catalog-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`
-          + `[data-catalog-picker-field="${CSS.escape(columnKey)}"]`
-        )
-          ?.focus({ preventScroll: true });
+        focusCatalogPickerButton({ rowId: input.dataset.rowId, columnKey });
         return;
       }
-      if (event.key === "Tab" && event.shiftKey && input.dataset.columnKey === "tools") {
+      const previousCell = event.key === "Tab" && event.shiftKey
+        ? adjacentCoachCell(input.dataset.rowId, input.dataset.columnKey, -1)
+        : null;
+      if (previousCell && CATALOG_PICKER_FIELDS.has(previousCell.columnKey)) {
         event.preventDefault();
         if (!commitCoachInput(input, false)) return;
         syncCoachInputFromModel(input);
-        selection = {
-          anchor: { rowId: input.dataset.rowId, columnKey: "exerciseName" },
-          focus: { rowId: input.dataset.rowId, columnKey: "exerciseName" }
-        };
+        selection = { anchor: previousCell, focus: previousCell };
         repaintCoachSelection();
-        document.querySelector(
-          `[data-catalog-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`
-          + '[data-catalog-picker-field="exerciseName"]'
-        )?.focus({ preventScroll: true });
-        return;
-      }
-      if (event.key === "Tab" && event.shiftKey && input.dataset.columnKey === "setRank") {
-        event.preventDefault();
-        selection = {
-          anchor: { rowId: input.dataset.rowId, columnKey: "tools" },
-          focus: { rowId: input.dataset.rowId, columnKey: "tools" }
-        };
-        repaintCoachSelection();
-        document.querySelector(
-          `[data-catalog-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`
-          + '[data-catalog-picker-field="tools"]'
-        )?.focus({ preventScroll: true });
+        focusCatalogPickerButton(previousCell);
         return;
       }
       if ((event.key === "ArrowLeft" || event.key === "ArrowRight")
@@ -1090,19 +1325,27 @@ const bindCoachGridEvents = () => {
   document.querySelectorAll("[data-catalog-picker-row-id]").forEach((button) => {
     button.addEventListener("click", () => {
       const rowId = button.dataset.catalogPickerRowId;
-      if (button.dataset.catalogPickerField === "exerciseName") openExercisePicker(rowId);
-      else openToolPicker(rowId);
+      const field = button.dataset.catalogPickerField;
+      if (field === "exerciseName") openExercisePicker(rowId);
+      else if (field === "tools") openToolPicker(rowId);
+      else openPrescriptionPicker(rowId, field);
     });
     button.addEventListener("keydown", (event) => {
       if (event.key !== "Tab") return;
-      event.preventDefault();
       const rowId = button.dataset.catalogPickerRowId;
       const columnKey = button.dataset.catalogPickerField;
       if (event.shiftKey) {
+        event.preventDefault();
         const input = document.querySelector(`[data-cell-id="${CSS.escape(`${rowId}::${columnKey}`)}"] input`);
         input?.focus({ preventScroll: true });
         return;
       }
+      if (tabLeavesCoachGrid(rowId, columnKey, false)) {
+        event.preventDefault();
+        byId("coach-activity").focus({ preventScroll: true });
+        return;
+      }
+      event.preventDefault();
       moveGridFocus(rowId, columnKey, "Tab", false, false);
     });
   });
@@ -1201,6 +1444,14 @@ const publishCoachClipboardText = (clipboard) => {
   });
 };
 
+const formatTargetSummary = (target) => {
+  try {
+    return parseRepetitionTarget(target).kind === "repetitions" ? `${target} rép.` : String(target);
+  } catch {
+    return String(target);
+  }
+};
+
 const openClientPreview = () => {
   const session = selectedSession();
   const groups = [];
@@ -1212,7 +1463,14 @@ const openClientPreview = () => {
     }
     let exercise = group.exercises.find((candidate) => candidate.id === row.plannedExerciseId);
     if (!exercise) {
-      exercise = { id: row.plannedExerciseId, name: row.exerciseName, tools: row.tools, sets: [] };
+      exercise = {
+        id: row.plannedExerciseId,
+        name: row.exerciseName,
+        tools: row.tools,
+        tempo: row.tempo,
+        restSeconds: row.restSeconds,
+        sets: []
+      };
       group.exercises.push(exercise);
     }
     exercise.sets.push(row);
@@ -1224,7 +1482,8 @@ const openClientPreview = () => {
         <article class="preview-exercise">
           <h3>${escapeHtml(exercise.name)}</h3>
           ${exercise.tools.length ? `<p class="preview-tools">${escapeHtml(displayCoachValue("tools", exercise.tools))}</p>` : ""}
-          <div>${exercise.sets.map((set) => `<span class="preview-set">${set.setRank} · ${escapeHtml(set.targetReps)} rép. · RIR ${set.targetRir === null ? "—" : escapeHtml(displayValue(set.targetRir))}${set.technique ? ` · ${escapeHtml(set.technique)}` : ""}</span>`).join("")}</div>
+          <p class="preview-prescription">Tempo ${escapeHtml(exercise.tempo)} · Repos ${escapeHtml(formatRestDuration(exercise.restSeconds))}</p>
+          <div>${exercise.sets.map((set) => `<span class="preview-set">${set.setRank} · ${escapeHtml(formatTargetSummary(set.targetReps))} · RIR ${set.targetRir === null ? "—" : escapeHtml(displayValue(set.targetRir))}${set.technique ? ` · ${escapeHtml(set.technique)}` : ""}</span>`).join("")}</div>
         </article>
       `).join("")}
     </section>
@@ -1343,7 +1602,7 @@ const renderWorkout = () => {
     <article class="exercise-card ${exercise.groupType === "superset" ? "in-superset" : ""}">
       <header class="exercise-heading">
         <span class="exercise-label">${escapeHtml(exercise.label)}</span>
-        <div><h3>${escapeHtml(exercise.name)}</h3><p>${exercise.groupType === "superset" ? `Superset ${escapeHtml(exercise.groupLabel)} · ` : ""}Tempo ${escapeHtml(exercise.tempo)} · repos ${exercise.restSeconds} s</p></div>
+        <div><h3>${escapeHtml(exercise.name)}</h3><p>${exercise.groupType === "superset" ? `Superset ${escapeHtml(exercise.groupLabel)} · ` : ""}Tempo ${escapeHtml(exercise.tempo)} · repos ${escapeHtml(formatRestDuration(exercise.restSeconds))}</p></div>
         ${exercise.groupType === "superset" ? '<span class="superset-badge">Superset</span>' : ""}
       </header>
       <div class="set-list">${exercise.sets.map((set) => {
@@ -1586,19 +1845,19 @@ const syncBulkEditor = () => {
     targetRir: "1,5",
     targetReps: "8-10",
     tempo: "2-0-2-0",
-    restSeconds: "90",
+    restSeconds: "1’30",
     technique: ""
   };
   input.value = examples[field] ?? "";
-  input.inputMode = ["targetRir"].includes(field) ? "decimal"
-    : field === "restSeconds" ? "numeric" : "text";
-  if (field === "technique") {
-    input.setAttribute("list", "technique-options");
-    input.placeholder = "Technique facultative";
-  } else {
-    input.removeAttribute("list");
-    input.placeholder = "Nouvelle valeur";
-  }
+  input.inputMode = field === "targetRir" ? "decimal" : "text";
+  const listId = {
+    targetReps: "repetition-target-options",
+    restSeconds: "rest-preset-options",
+    technique: "technique-options"
+  }[field];
+  if (listId) input.setAttribute("list", listId);
+  else input.removeAttribute("list");
+  input.placeholder = field === "technique" ? "Technique facultative" : "Nouvelle valeur";
 };
 
 const bindStaticEvents = () => {
@@ -1770,6 +2029,25 @@ const bindStaticEvents = () => {
   byId("cancel-tool-picker").addEventListener("click", closeToolPicker);
   byId("tool-picker-dialog").addEventListener("close", () => {
     toolPickerContext = null;
+  });
+  byId("prescription-picker-search").addEventListener("input", () => {
+    renderPrescriptionPickerOptions();
+    byId("prescription-picker-options").scrollTop = 0;
+  });
+  byId("prescription-picker-search").addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+    const options = [...document.querySelectorAll('#prescription-picker-options input[type="radio"]')];
+    if (options.length === 0) return;
+    event.preventDefault();
+    const selectedOption = options.find((option) => option.checked);
+    const nextOption = selectedOption ?? (event.key === "ArrowDown" ? options[0] : options.at(-1));
+    nextOption.focus({ preventScroll: false });
+    nextOption.scrollIntoView({ block: "nearest" });
+  });
+  byId("apply-prescription-picker").addEventListener("click", applyPrescriptionPicker);
+  byId("cancel-prescription-picker").addEventListener("click", closePrescriptionPicker);
+  byId("prescription-picker-dialog").addEventListener("close", () => {
+    prescriptionPickerContext = null;
   });
   byId("resume-workout").addEventListener("click", () => setMobileScreen("workout"));
   byId("back-to-today").addEventListener("click", () => setMobileScreen("today"));

@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="description" content="Prototype J1 des interfaces coach et client de JBM.">
     <title>JBM — Prototype J1</title>
-    <link rel="stylesheet" href="./styles.css?v=20260808.8">
+    <link rel="stylesheet" href="./styles.css?v=20260809.1">
   </head>
   <body>
     <header class="app-header">
@@ -21,7 +21,7 @@
         <a class="view-tab" data-view-link="coach" href="#coach">Coach · Web</a>
         <a class="view-tab" data-view-link="client" href="#client">Client · Mobile</a>
       </nav>
-      <span class="prototype-pill">Prototype J1 · build 2026-08-08.8 · données fictives</span>
+      <span class="prototype-pill">Prototype J1 · build 2026-08-09.1 · données fictives</span>
     </header>
 
     <main>
@@ -154,7 +154,7 @@
               <span class="metric-value" id="undo-depth">0</span>
               <span class="metric-label">actions annulables</span>
             </div>
-            <p id="coach-activity" class="activity-message" aria-live="polite">Prêt pour le test coach.</p>
+            <p id="coach-activity" class="activity-message" aria-live="polite" tabindex="0">Prêt pour le test coach.</p>
           </div>
         </div>
       </section>
@@ -331,6 +331,28 @@
       </div>
     </dialog>
 
+    <dialog id="prescription-picker-dialog" class="prototype-dialog tool-picker-dialog" aria-labelledby="prescription-picker-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Liste configurable</p>
+          <h2 id="prescription-picker-title">Choisir une valeur</h2>
+          <p id="prescription-picker-description"></p>
+          <p>Valeur actuelle : <strong id="prescription-picker-current"></strong></p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer">×</button>
+      </form>
+      <label id="prescription-picker-search-label" for="prescription-picker-search">Rechercher dans les valeurs initiales</label>
+      <input id="prescription-picker-search" class="tool-picker-search" type="search" autocomplete="off" placeholder="Rechercher…">
+      <div class="tool-picker-summary">
+        <strong id="prescription-picker-count" aria-live="polite">0 résultat</strong>
+      </div>
+      <div id="prescription-picker-options" class="tool-picker-options" role="radiogroup" aria-label="Valeurs disponibles"></div>
+      <div class="dialog-actions">
+        <button id="cancel-prescription-picker" class="button button-secondary" type="button">Annuler</button>
+        <button id="apply-prescription-picker" class="button button-primary" type="button">Appliquer</button>
+      </div>
+    </dialog>
+
     <dialog id="paste-dialog" class="prototype-dialog" aria-labelledby="paste-title">
       <form method="dialog" class="dialog-header">
         <div>
@@ -373,8 +395,10 @@
 
     <datalist id="exercise-options"></datalist>
     <datalist id="tool-options"></datalist>
+    <datalist id="repetition-target-options"></datalist>
+    <datalist id="rest-preset-options"></datalist>
     <datalist id="technique-options"></datalist>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./app.js?v=20260808.8"></script>
+    <script type="module" src="./app.js?v=20260809.1"></script>
   </body>
 </html>

@@ -8,16 +8,89 @@ export const COACH_COLUMNS = [
   { key: "targetReps", label: "Répétitions" },
   { key: "targetRir", label: "RIR" },
   { key: "tempo", label: "Tempo" },
-  { key: "restSeconds", label: "Repos (s)" },
+  { key: "restSeconds", label: "Repos" },
   { key: "technique", label: "Technique" }
 ];
 
 export const MAX_TOOLS_PER_EXERCISE = 6;
 
+const MAX_REST_SECONDS = 900;
+const DURATION_PATTERN = /^(\d+)\s*['’′]\s*(\d{1,2})?$/u;
+
+const invalidRestDuration = () => new Error(
+  "Le repos doit être un entier entre 0 et 900 secondes, ou une durée comme 1’30"
+);
+
+export const formatRestDuration = (seconds) => {
+  const value = typeof seconds === "string" && seconds.trim() !== ""
+    ? Number(seconds.trim())
+    : seconds;
+  if (!Number.isInteger(value) || value < 0 || value > MAX_REST_SECONDS) {
+    throw invalidRestDuration();
+  }
+  const minutes = Math.floor(value / 60);
+  const remainingSeconds = value % 60;
+  return remainingSeconds === 0
+    ? `${minutes}’`
+    : `${minutes}’${String(remainingSeconds).padStart(2, "0")}`;
+};
+
+export const parseRestDuration = (rawValue) => {
+  const raw = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+  if (typeof raw === "number" || /^\d+$/u.test(String(raw ?? ""))) {
+    const seconds = Number(raw);
+    if (!Number.isInteger(seconds) || seconds < 0 || seconds > MAX_REST_SECONDS) {
+      throw invalidRestDuration();
+    }
+    return seconds;
+  }
+  const match = String(raw ?? "").match(DURATION_PATTERN);
+  if (!match) throw invalidRestDuration();
+  const minutes = Number(match[1]);
+  const seconds = match[2] === undefined ? 0 : Number(match[2]);
+  if (seconds > 59) throw invalidRestDuration();
+  const totalSeconds = minutes * 60 + seconds;
+  if (totalSeconds > MAX_REST_SECONDS) throw invalidRestDuration();
+  return totalSeconds;
+};
+
+export const parseRepetitionTarget = (rawValue) => {
+  const raw = String(rawValue ?? "").trim();
+  if (/^MAX$/iu.test(raw)) {
+    return { kind: "max", label: "MAX" };
+  }
+  if (/['’′]/u.test(raw)) {
+    let seconds;
+    try {
+      seconds = parseRestDuration(raw);
+    } catch {
+      throw new Error("La durée cible doit ressembler à 0’45, 1’ ou 1’30");
+    }
+    if (seconds === 0) throw new Error("La durée cible doit être supérieure à zéro");
+    return { kind: "duration", seconds, label: formatRestDuration(seconds) };
+  }
+  const match = raw.match(/^(\d+)\s*(?:[-–—−]\s*(\d+))?$/u);
+  if (!match) {
+    throw new Error("La cible de répétitions doit être un nombre, une plage comme 8-10, MAX ou une durée comme 1’30");
+  }
+  const minimum = Number(match[1]);
+  const maximum = match[2] === undefined ? minimum : Number(match[2]);
+  if (minimum > maximum) {
+    throw new Error("La borne minimale de répétitions ne peut pas dépasser la borne maximale");
+  }
+  return {
+    kind: "repetitions",
+    min: minimum,
+    max: maximum,
+    label: minimum === maximum ? String(minimum) : `${minimum}-${maximum}`
+  };
+};
+
 export const catalogSearchKey = (value) => String(value ?? "")
   .trim()
   .normalize("NFD")
   .replace(/\p{M}/gu, "")
+  .replace(/[–—−]/gu, "-")
   .toLocaleUpperCase("fr-FR");
 
 const catalogValueList = (values) => Array.isArray(values) ? values : [values];
@@ -90,7 +163,7 @@ export const buildCoachPrototype = (fixture) => {
       exerciseName: catalogExercise.name,
       tools: catalogExercise.toolIds.map((toolId) => toolNames.get(toolId)).filter(Boolean),
       setRank: set.rank,
-      targetReps: `${set.targetRepsMin}–${set.targetRepsMax}`,
+      targetReps: `${set.targetRepsMin}-${set.targetRepsMax}`,
       targetRir: set.targetRir,
       tempo: tempoLabel(plannedExercise.tempo),
       restSeconds: plannedExercise.restSeconds,
@@ -477,19 +550,10 @@ export const normalizeCoachValue = (field, rawValue) => {
     return value;
   }
   if (field === "restSeconds") {
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < 0 || value > 900) {
-      throw new Error("Le repos doit être un entier entre 0 et 900 secondes");
-    }
-    return value;
+    return parseRestDuration(raw);
   }
   if (field === "targetReps") {
-    const match = String(raw).match(/^(\d+)\s*(?:[-–]\s*(\d+))?$/u);
-    if (!match) throw new Error("Les répétitions doivent ressembler à 8–10 ou 12");
-    if (match[2] && Number(match[1]) > Number(match[2])) {
-      throw new Error("La borne minimale de répétitions ne peut pas dépasser la borne maximale");
-    }
-    return match[2] ? `${match[1]}–${match[2]}` : match[1];
+    return parseRepetitionTarget(raw).label;
   }
   if (field === "tempo") {
     if (raw === "Hérité") return raw;
@@ -893,7 +957,7 @@ export const buildClientPrototype = (fixture) => {
         return {
           id: set.id,
           rank: set.rank,
-          targetReps: `${set.targetRepsMin}–${set.targetRepsMax}`,
+          targetReps: `${set.targetRepsMin}-${set.targetRepsMax}`,
           targetRir: set.targetRir,
           previousDisplay: previous?.display ?? "—",
           values: resolveSeriesInput(current, previous),

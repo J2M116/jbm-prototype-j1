@@ -2013,6 +2013,11 @@ main,
   background: rgba(105, 215, 125, 0.13);
 }
 
+.tool-picker-option.is-empty strong {
+  color: var(--text-soft);
+  font-style: italic;
+}
+
 .tool-picker-option:has(input:disabled) {
   opacity: 0.48;
   cursor: not-allowed;
@@ -2225,11 +2230,16 @@ main,
   letter-spacing: -0.01em;
 }
 
-.preview-tools {
+.preview-tools,
+.preview-prescription {
   margin: 0 0 8px;
   color: var(--text-soft);
   font-size: 0.68rem;
   font-weight: 680;
+}
+
+.preview-tools + .preview-prescription {
+  margin-top: -4px;
 }
 
 .preview-exercise > div {
