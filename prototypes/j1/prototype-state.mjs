@@ -14,6 +14,58 @@ export const COACH_COLUMNS = [
 
 export const MAX_TOOLS_PER_EXERCISE = 6;
 
+export const catalogSearchKey = (value) => String(value ?? "")
+  .trim()
+  .normalize("NFD")
+  .replace(/\p{M}/gu, "")
+  .toLocaleUpperCase("fr-FR");
+
+const catalogValueList = (values) => Array.isArray(values) ? values : [values];
+
+const distinctCatalogValues = (values) => {
+  const distinct = [];
+  const identities = new Set();
+  catalogValueList(values).forEach((rawValue) => {
+    const value = String(rawValue ?? "").trim();
+    const identity = catalogSearchKey(value);
+    if (!identity || identities.has(identity)) return;
+    identities.add(identity);
+    distinct.push(value);
+  });
+  return distinct;
+};
+
+export const canonicalizeCatalogValues = (catalogValues, currentValues) => {
+  const catalog = distinctCatalogValues(catalogValues);
+  const catalogByIdentity = new Map(catalog.map((value) => [catalogSearchKey(value), value]));
+  return distinctCatalogValues(currentValues).map((value) => (
+    catalogByIdentity.get(catalogSearchKey(value)) ?? value
+  ));
+};
+
+export const canonicalizeCatalogValue = (catalogValues, currentValue) => (
+  canonicalizeCatalogValues(catalogValues, currentValue)[0] ?? ""
+);
+
+export const catalogPickerOptions = (catalogValues, currentValues = [], query = "") => {
+  const catalog = distinctCatalogValues(catalogValues);
+  const current = canonicalizeCatalogValues(catalog, currentValues);
+  const catalogIdentities = new Set(catalog.map(catalogSearchKey));
+  const selectedIdentities = new Set(current.map(catalogSearchKey));
+  const historicalValues = current.filter((value) => !catalogIdentities.has(catalogSearchKey(value)));
+  const queryKey = catalogSearchKey(query);
+  return [...historicalValues, ...catalog]
+    .filter((value) => !queryKey || catalogSearchKey(value).includes(queryKey))
+    .map((value) => {
+      const identity = catalogSearchKey(value);
+      return {
+        value,
+        selected: selectedIdentities.has(identity),
+        legacy: !catalogIdentities.has(identity)
+      };
+    });
+};
+
 const catalogById = (fixture) => new Map(fixture.catalog.exercises.map((exercise) => [exercise.id, exercise]));
 const toolsById = (fixture) => new Map(fixture.catalog.tools.map((tool) => [tool.id, tool.name]));
 

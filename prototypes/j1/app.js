@@ -5,6 +5,8 @@ import {
   applySpreadsheetPaste,
   buildClientPrototype,
   buildCoachPrototype,
+  canonicalizeCatalogValues,
+  catalogPickerOptions,
   coachValuesEqual,
   copyCoachRectangle,
   duplicateExercise,
@@ -22,7 +24,7 @@ import {
   timingResult,
   updateCoachCell,
   upgradeCoachDraftModel
-} from "./prototype-state.mjs?v=20260808.7";
+} from "./prototype-state.mjs?v=20260808.8";
 
 const FIXTURE_URL = "../../sample-data/jbm-alpha.fixture.json";
 const PRESCRIPTION_CATALOG_URL = "../../sample-data/jbm-initial-prescription-catalog.json";
@@ -60,6 +62,7 @@ let redoStack = [];
 let selection = { anchor: null, focus: null };
 let coachClipboard = null;
 let pastePreview = null;
+let exercisePickerContext = null;
 let toolPickerContext = null;
 let activeMobileScreen = "today";
 let timingTrial = null;
@@ -386,10 +389,21 @@ const renderCoachGrid = (focusCellId = null) => {
       const inputHtml = `<input value="${escapeHtml(displayCoachValue(column.key, row[column.key]))}" inputmode="${inputMode}"${listAttribute}${guidanceAttributes}
         aria-label="${escapeHtml(`${column.label}, ${row.exerciseName}, série ${row.setRank}`)}"
         data-row-id="${escapeHtml(row.id)}" data-column-key="${escapeHtml(column.key)}"${structuralAttributes}>`;
-      const editorHtml = column.key === "tools"
-        ? `<div class="tools-cell-editor">${inputHtml}<button class="tool-picker-button" type="button"
-            aria-label="${escapeHtml(`Choisir les outils, ${row.exerciseName}, série ${row.setRank}`)}"
-            aria-haspopup="dialog" data-tool-picker-row-id="${escapeHtml(row.id)}" title="Choisir jusqu’à 6 outils dans la liste">⌄</button></div>`
+      const picker = {
+        exerciseName: {
+          label: `Choisir un exercice connu, ${row.exerciseName}, série ${row.setRank}`,
+          title: "Choisir un exercice dans le catalogue"
+        },
+        tools: {
+          label: `Choisir les outils, ${row.exerciseName}, série ${row.setRank}`,
+          title: "Choisir jusqu’à 6 outils dans le catalogue"
+        }
+      }[column.key];
+      const editorHtml = picker
+        ? `<div class="catalog-cell-editor">${inputHtml}<button class="catalog-picker-button" type="button"
+            aria-label="${escapeHtml(picker.label)}" aria-haspopup="dialog"
+            data-catalog-picker-field="${escapeHtml(column.key)}"
+            data-catalog-picker-row-id="${escapeHtml(row.id)}" title="${escapeHtml(picker.title)}">⌄</button></div>`
         : inputHtml;
       return `<td role="gridcell" class="grid-cell ${isSelected ? "is-selected" : ""} ${isAnchor ? "is-anchor" : ""}"
         data-cell-id="${escapeHtml(cellId)}" data-row-id="${escapeHtml(row.id)}"
@@ -547,6 +561,33 @@ const dirtyCoachInput = () => {
     .find(coachInputIsDirty) ?? null;
 };
 
+const syncCoachRowAccessibleLabels = (rows) => {
+  rows.forEach((row) => {
+    COACH_COLUMNS.forEach((column) => {
+      const input = document.querySelector(
+        `[data-cell-id="${CSS.escape(`${row.id}::${column.key}`)}"] input`
+      );
+      input?.setAttribute("aria-label", `${column.label}, ${row.exerciseName}, série ${row.setRank}`);
+    });
+    const exerciseButton = document.querySelector(
+      `[data-catalog-picker-row-id="${CSS.escape(row.id)}"]`
+      + '[data-catalog-picker-field="exerciseName"]'
+    );
+    exerciseButton?.setAttribute(
+      "aria-label",
+      `Choisir un exercice connu, ${row.exerciseName}, série ${row.setRank}`
+    );
+    const toolButton = document.querySelector(
+      `[data-catalog-picker-row-id="${CSS.escape(row.id)}"]`
+      + '[data-catalog-picker-field="tools"]'
+    );
+    toolButton?.setAttribute(
+      "aria-label",
+      `Choisir les outils, ${row.exerciseName}, série ${row.setRank}`
+    );
+  });
+};
+
 const syncCoachInputFromModel = (input) => {
   const session = selectedSession();
   const row = session?.rows.find((candidate) => candidate.id === input.dataset.rowId);
@@ -564,15 +605,19 @@ const syncCoachInputFromModel = (input) => {
   document.querySelectorAll(`.grid-cell input[data-column-key="${input.dataset.columnKey}"]`).forEach((candidate) => {
     if (valuesByRowId.has(candidate.dataset.rowId)) candidate.value = valuesByRowId.get(candidate.dataset.rowId);
   });
+  if (input.dataset.columnKey === "exerciseName") syncCoachRowAccessibleLabels(targetRows);
 };
 
 const prepareCoachCommand = (input = activeCoachInput()) => {
   const pendingInput = dirtyCoachInput() ?? input;
-  if (pendingInput && !commitCoachInput(pendingInput, false)) {
-    if (!pendingInput.checkValidity()) {
-      setCoachActivity("Action interrompue : corrigez d’abord la cellule invalide.");
+  if (pendingInput) {
+    if (!commitCoachInput(pendingInput, false)) {
+      if (!pendingInput.checkValidity()) {
+        setCoachActivity("Action interrompue : corrigez d’abord la cellule invalide.");
+      }
+      return false;
     }
-    return false;
+    syncCoachInputFromModel(pendingInput);
   }
   const invalidInput = document.querySelector(".grid-cell input:invalid");
   if (invalidInput) {
@@ -726,35 +771,125 @@ const scheduleCoachGridRefresh = () => {
   }, 0);
 };
 
-const toolSearchKey = (value) => String(value)
-  .normalize("NFD")
-  .replace(/\p{M}/gu, "")
-  .toLocaleUpperCase("fr-FR");
+const renderExercisePickerOptions = () => {
+  if (!exercisePickerContext) return;
+  const options = catalogPickerOptions(
+    prescriptionCatalog.exercises,
+    exercisePickerContext.value,
+    byId("exercise-picker-search").value
+  );
+
+  byId("exercise-picker-options").innerHTML = options.length > 0
+    ? options.map((option) => `<label class="tool-picker-option ${option.selected ? "is-selected" : ""} ${option.legacy ? "is-legacy" : ""}">
+        <input type="radio" name="exercise-picker-choice" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""}>
+        <span><strong>${escapeHtml(option.value)}</strong>${option.legacy ? "<small>Valeur existante hors catalogue</small>" : ""}</span>
+      </label>`).join("")
+    : '<p class="tool-picker-empty">Aucun exercice ne correspond à cette recherche.</p>';
+
+  const resultLabel = `${options.length} résultat${options.length > 1 ? "s" : ""}`;
+  byId("exercise-picker-count").textContent = `${resultLabel} · 1 exercice sélectionné`;
+  document.querySelectorAll('#exercise-picker-options input[type="radio"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      exercisePickerContext.value = radio.value;
+      document.querySelectorAll("#exercise-picker-options .tool-picker-option").forEach((label) => {
+        label.classList.toggle("is-selected", label.querySelector("input")?.checked === true);
+      });
+    });
+    radio.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!radio.checked) {
+        radio.checked = true;
+        exercisePickerContext.value = radio.value;
+      }
+      applyExercisePicker();
+    });
+  });
+};
+
+const openExercisePicker = (rowId) => {
+  if (!prepareCoachCommand()) return;
+  const row = selectedSession()?.rows.find((candidate) => candidate.id === rowId);
+  if (!row) return;
+  exercisePickerContext = { rowId, value: row.exerciseName };
+  byId("exercise-picker-current").textContent = row.exerciseName;
+  byId("exercise-picker-search").value = "";
+  renderExercisePickerOptions();
+  byId("exercise-picker-dialog").showModal();
+  const selectedOption = document.querySelector('#exercise-picker-options input[type="radio"]:checked');
+  if (selectedOption) selectedOption.scrollIntoView({ block: "center" });
+  else byId("exercise-picker-options").scrollTop = 0;
+  byId("exercise-picker-search").focus({ preventScroll: true });
+};
+
+const closeExercisePicker = () => {
+  if (byId("exercise-picker-dialog").open) byId("exercise-picker-dialog").close();
+  exercisePickerContext = null;
+};
+
+const applyExercisePicker = () => {
+  if (!exercisePickerContext) return;
+  const session = selectedSession();
+  const row = session?.rows.find((candidate) => candidate.id === exercisePickerContext.rowId);
+  if (!row) {
+    closeExercisePicker();
+    return;
+  }
+  const nextCell = { rowId: row.id, columnKey: "exerciseName" };
+  selection = { anchor: nextCell, focus: nextCell };
+  if (coachValuesEqual(row.exerciseName, exercisePickerContext.value)) {
+    closeExercisePicker();
+    renderCoachGrid(`${row.id}::exerciseName`);
+    setCoachActivity("Sélection d’exercice refermée sans changement.");
+    return;
+  }
+  try {
+    const nextExerciseName = exercisePickerContext.value;
+    const affectedSeriesCount = session.rows.filter(
+      (candidate) => candidate.plannedExerciseId === row.plannedExerciseId
+    ).length;
+    const next = updateCoachCell(
+      coachModel,
+      coachModel.selectedSessionId,
+      row.id,
+      "exerciseName",
+      nextExerciseName
+    );
+    const committed = commitCoachModel(
+      next,
+      `Exercice « ${nextExerciseName} » appliqué à ${affectedSeriesCount} série(s) en une action annulable.`,
+      false
+    );
+    if (!committed) return;
+    closeExercisePicker();
+    renderCoachGrid(`${row.id}::exerciseName`);
+  } catch (error) {
+    showToast(error.message);
+    setCoachActivity(`Exercice non appliqué : ${error.message}`);
+  }
+};
 
 const renderToolPickerOptions = () => {
   if (!toolPickerContext) return;
-  const query = toolSearchKey(byId("tool-picker-search").value.trim());
-  const selected = new Set(toolPickerContext.values);
-  const configuredIdentities = new Set(prescriptionCatalog.tools.map(toolSearchKey));
-  const legacyValues = toolPickerContext.values.filter((tool) => !configuredIdentities.has(toolSearchKey(tool)));
-  const options = [...legacyValues, ...prescriptionCatalog.tools]
-    .filter((tool, index, values) => values.findIndex((candidate) => toolSearchKey(candidate) === toolSearchKey(tool)) === index)
-    .filter((tool) => !query || toolSearchKey(tool).includes(query));
+  const options = catalogPickerOptions(
+    prescriptionCatalog.tools,
+    toolPickerContext.values,
+    byId("tool-picker-search").value
+  );
+  const selectedCount = toolPickerContext.values.length;
 
   byId("tool-picker-options").innerHTML = options.length > 0
-    ? options.map((tool) => {
-      const isSelected = selected.has(tool);
-      const isLegacy = !configuredIdentities.has(toolSearchKey(tool));
-      const disabled = !isSelected && selected.size >= MAX_TOOLS_PER_EXERCISE;
-      return `<label class="tool-picker-option ${isSelected ? "is-selected" : ""} ${isLegacy ? "is-legacy" : ""}">
-        <input type="checkbox" value="${escapeHtml(tool)}" ${isSelected ? "checked" : ""} ${disabled ? "disabled" : ""}>
-        <span><strong>${escapeHtml(tool)}</strong>${isLegacy ? "<small>Valeur existante hors catalogue</small>" : ""}</span>
+    ? options.map((option) => {
+      const disabled = !option.selected && selectedCount >= MAX_TOOLS_PER_EXERCISE;
+      return `<label class="tool-picker-option ${option.selected ? "is-selected" : ""} ${option.legacy ? "is-legacy" : ""}">
+        <input type="checkbox" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""} ${disabled ? "disabled" : ""}>
+        <span><strong>${escapeHtml(option.value)}</strong>${option.legacy ? "<small>Valeur existante hors catalogue</small>" : ""}</span>
       </label>`;
     }).join("")
     : '<p class="tool-picker-empty">Aucun outil ne correspond à cette recherche.</p>';
 
-  byId("tool-picker-count").textContent = `${selected.size} / ${MAX_TOOLS_PER_EXERCISE} sélectionné(s)`;
-  byId("clear-tool-picker").disabled = selected.size === 0;
+  byId("tool-picker-count").textContent = `${selectedCount} / ${MAX_TOOLS_PER_EXERCISE} sélectionné(s)`;
+  byId("clear-tool-picker").disabled = selectedCount === 0;
   document.querySelectorAll('#tool-picker-options input[type="checkbox"]').forEach((checkbox) => {
     checkbox.addEventListener("change", () => {
       const changedTool = checkbox.value;
@@ -776,12 +911,9 @@ const openToolPicker = (rowId) => {
   if (!prepareCoachCommand()) return;
   const row = selectedSession()?.rows.find((candidate) => candidate.id === rowId);
   if (!row) return;
-  const configuredByIdentity = new Map(
-    prescriptionCatalog.tools.map((tool) => [toolSearchKey(tool), tool])
-  );
   toolPickerContext = {
     rowId,
-    values: row.tools.map((tool) => configuredByIdentity.get(toolSearchKey(tool)) ?? tool)
+    values: canonicalizeCatalogValues(prescriptionCatalog.tools, row.tools)
   };
   byId("tool-picker-exercise").textContent = row.exerciseName;
   byId("tool-picker-search").value = "";
@@ -858,7 +990,7 @@ const bindCoachGridEvents = () => {
     });
     input.addEventListener("input", () => input.setCustomValidity(""));
     input.addEventListener("change", () => {
-      if (coachInputIsDirty(input) && commitCoachInput(input, false)) scheduleCoachGridRefresh();
+      if (coachInputIsDirty(input) && commitCoachInput(input, false)) syncCoachInputFromModel(input);
     });
     input.addEventListener("copy", (event) => {
       if (input.selectionStart !== input.selectionEnd) return;
@@ -889,17 +1021,38 @@ const bindCoachGridEvents = () => {
     input.addEventListener("keydown", (event) => {
       const navigationKeys = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Tab"]);
       if (!navigationKeys.has(event.key)) return;
-      if (event.key === "Tab" && !event.shiftKey && input.dataset.columnKey === "tools") {
+      if (event.key === "Tab"
+        && !event.shiftKey
+        && ["exerciseName", "tools"].includes(input.dataset.columnKey)) {
+        event.preventDefault();
+        if (!commitCoachInput(input, false)) return;
+        syncCoachInputFromModel(input);
+        const columnKey = input.dataset.columnKey;
+        selection = {
+          anchor: { rowId: input.dataset.rowId, columnKey },
+          focus: { rowId: input.dataset.rowId, columnKey }
+        };
+        repaintCoachSelection();
+        document.querySelector(
+          `[data-catalog-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`
+          + `[data-catalog-picker-field="${CSS.escape(columnKey)}"]`
+        )
+          ?.focus({ preventScroll: true });
+        return;
+      }
+      if (event.key === "Tab" && event.shiftKey && input.dataset.columnKey === "tools") {
         event.preventDefault();
         if (!commitCoachInput(input, false)) return;
         syncCoachInputFromModel(input);
         selection = {
-          anchor: { rowId: input.dataset.rowId, columnKey: "tools" },
-          focus: { rowId: input.dataset.rowId, columnKey: "tools" }
+          anchor: { rowId: input.dataset.rowId, columnKey: "exerciseName" },
+          focus: { rowId: input.dataset.rowId, columnKey: "exerciseName" }
         };
         repaintCoachSelection();
-        document.querySelector(`[data-tool-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`)
-          ?.focus({ preventScroll: true });
+        document.querySelector(
+          `[data-catalog-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`
+          + '[data-catalog-picker-field="exerciseName"]'
+        )?.focus({ preventScroll: true });
         return;
       }
       if (event.key === "Tab" && event.shiftKey && input.dataset.columnKey === "setRank") {
@@ -909,8 +1062,10 @@ const bindCoachGridEvents = () => {
           focus: { rowId: input.dataset.rowId, columnKey: "tools" }
         };
         repaintCoachSelection();
-        document.querySelector(`[data-tool-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`)
-          ?.focus({ preventScroll: true });
+        document.querySelector(
+          `[data-catalog-picker-row-id="${CSS.escape(input.dataset.rowId)}"]`
+          + '[data-catalog-picker-field="tools"]'
+        )?.focus({ preventScroll: true });
         return;
       }
       if ((event.key === "ArrowLeft" || event.key === "ArrowRight")
@@ -932,18 +1087,23 @@ const bindCoachGridEvents = () => {
       );
     });
   });
-  document.querySelectorAll("[data-tool-picker-row-id]").forEach((button) => {
-    button.addEventListener("click", () => openToolPicker(button.dataset.toolPickerRowId));
+  document.querySelectorAll("[data-catalog-picker-row-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const rowId = button.dataset.catalogPickerRowId;
+      if (button.dataset.catalogPickerField === "exerciseName") openExercisePicker(rowId);
+      else openToolPicker(rowId);
+    });
     button.addEventListener("keydown", (event) => {
       if (event.key !== "Tab") return;
       event.preventDefault();
-      const rowId = button.dataset.toolPickerRowId;
+      const rowId = button.dataset.catalogPickerRowId;
+      const columnKey = button.dataset.catalogPickerField;
       if (event.shiftKey) {
-        const input = document.querySelector(`[data-cell-id="${CSS.escape(`${rowId}::tools`)}"] input`);
+        const input = document.querySelector(`[data-cell-id="${CSS.escape(`${rowId}::${columnKey}`)}"] input`);
         input?.focus({ preventScroll: true });
         return;
       }
-      moveGridFocus(rowId, "tools", "Tab", false, false);
+      moveGridFocus(rowId, columnKey, "Tab", false, false);
     });
   });
 };
@@ -1581,6 +1741,25 @@ const bindStaticEvents = () => {
     showToast(`${count} ligne(s) ajoutée(s) comme une action annulable.`);
   });
   byId("cancel-paste").addEventListener("click", () => byId("paste-dialog").close());
+  byId("exercise-picker-search").addEventListener("input", () => {
+    renderExercisePickerOptions();
+    byId("exercise-picker-options").scrollTop = 0;
+  });
+  byId("exercise-picker-search").addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+    const options = [...document.querySelectorAll('#exercise-picker-options input[type="radio"]')];
+    if (options.length === 0) return;
+    event.preventDefault();
+    const selectedOption = options.find((option) => option.checked);
+    const nextOption = selectedOption ?? (event.key === "ArrowDown" ? options[0] : options.at(-1));
+    nextOption.focus({ preventScroll: false });
+    nextOption.scrollIntoView({ block: "nearest" });
+  });
+  byId("apply-exercise-picker").addEventListener("click", applyExercisePicker);
+  byId("cancel-exercise-picker").addEventListener("click", closeExercisePicker);
+  byId("exercise-picker-dialog").addEventListener("close", () => {
+    exercisePickerContext = null;
+  });
   byId("tool-picker-search").addEventListener("input", renderToolPickerOptions);
   byId("clear-tool-picker").addEventListener("click", () => {
     if (!toolPickerContext) return;

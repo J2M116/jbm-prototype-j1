@@ -785,7 +785,7 @@ main,
 }
 
 .coach-grid td > input,
-.coach-grid .tools-cell-editor > input,
+.coach-grid .catalog-cell-editor > input,
 .coach-grid td > select,
 .coach-grid td > button,
 .coach-grid td [contenteditable="true"],
@@ -804,7 +804,7 @@ main,
 }
 
 .coach-grid td > input:focus-visible,
-.coach-grid .tools-cell-editor > input:focus-visible,
+.coach-grid .catalog-cell-editor > input:focus-visible,
 .coach-grid td > select:focus-visible,
 .coach-grid td > button:focus-visible,
 .coach-grid td [contenteditable="true"]:focus-visible,
@@ -823,7 +823,7 @@ main,
   font-weight: 760;
 }
 
-.tools-cell-editor {
+.catalog-cell-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 34px;
   align-items: stretch;
@@ -831,7 +831,7 @@ main,
   min-height: 47px;
 }
 
-.tool-picker-button {
+.catalog-picker-button {
   display: grid;
   width: 34px;
   min-height: 47px;
@@ -845,11 +845,11 @@ main,
   font-weight: 850;
 }
 
-.tool-picker-button:hover {
+.catalog-picker-button:hover {
   background: rgba(40, 123, 64, 0.14);
 }
 
-.tool-picker-button:focus-visible {
+.catalog-picker-button:focus-visible {
   position: relative;
   z-index: 1;
   outline: 3px solid var(--green-600);

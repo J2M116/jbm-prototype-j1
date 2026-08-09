@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="description" content="Prototype J1 des interfaces coach et client de JBM.">
     <title>JBM — Prototype J1</title>
-    <link rel="stylesheet" href="./styles.css?v=20260808.7">
+    <link rel="stylesheet" href="./styles.css?v=20260808.8">
   </head>
   <body>
     <header class="app-header">
@@ -21,7 +21,7 @@
         <a class="view-tab" data-view-link="coach" href="#coach">Coach · Web</a>
         <a class="view-tab" data-view-link="client" href="#client">Client · Mobile</a>
       </nav>
-      <span class="prototype-pill">Prototype J1 · build 2026-08-08.7 · données fictives</span>
+      <span class="prototype-pill">Prototype J1 · build 2026-08-08.8 · données fictives</span>
     </header>
 
     <main>
@@ -288,6 +288,27 @@
       </section>
     </main>
 
+    <dialog id="exercise-picker-dialog" class="prototype-dialog tool-picker-dialog" aria-labelledby="exercise-picker-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Catalogue configurable</p>
+          <h2 id="exercise-picker-title">Choisir un exercice</h2>
+          <p>Valeur actuelle : <strong id="exercise-picker-current"></strong>. Le choix est appliqué à toutes ses séries.</p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer">×</button>
+      </form>
+      <label for="exercise-picker-search">Rechercher dans les 112 exercices initiaux</label>
+      <input id="exercise-picker-search" class="tool-picker-search" type="search" autocomplete="off" placeholder="Ex. développé, curl, squat…">
+      <div class="tool-picker-summary">
+        <strong id="exercise-picker-count" aria-live="polite">112 résultats · 1 exercice sélectionné</strong>
+      </div>
+      <div id="exercise-picker-options" class="tool-picker-options" role="radiogroup" aria-label="Exercices disponibles"></div>
+      <div class="dialog-actions">
+        <button id="cancel-exercise-picker" class="button button-secondary" type="button">Annuler</button>
+        <button id="apply-exercise-picker" class="button button-primary" type="button">Appliquer l’exercice</button>
+      </div>
+    </dialog>
+
     <dialog id="tool-picker-dialog" class="prototype-dialog tool-picker-dialog" aria-labelledby="tool-picker-title">
       <form method="dialog" class="dialog-header">
         <div>
@@ -354,6 +375,6 @@
     <datalist id="tool-options"></datalist>
     <datalist id="technique-options"></datalist>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./app.js?v=20260808.7"></script>
+    <script type="module" src="./app.js?v=20260808.8"></script>
   </body>
 </html>
