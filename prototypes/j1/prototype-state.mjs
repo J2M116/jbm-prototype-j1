@@ -139,6 +139,89 @@ export const catalogPickerOptions = (catalogValues, currentValues = [], query = 
     });
 };
 
+export const LEGACY_EXERCISE_GROUP_NAME = "Valeurs existantes hors catalogue";
+
+const normalizeMuscleGroups = (muscleGroups) => {
+  if (!Array.isArray(muscleGroups) || muscleGroups.length === 0) {
+    throw new Error("Le catalogue doit contenir au moins un groupe musculaire");
+  }
+  const groupIdentities = new Set();
+  const exerciseIdentities = new Set();
+  return muscleGroups.map((rawGroup) => {
+    const name = String(rawGroup?.name ?? "").trim();
+    const groupIdentity = catalogSearchKey(name);
+    if (!groupIdentity) throw new Error("Le nom du groupe musculaire est obligatoire");
+    if (groupIdentities.has(groupIdentity)) {
+      throw new Error(`Groupe musculaire en double : ${name}`);
+    }
+    groupIdentities.add(groupIdentity);
+    if (!Array.isArray(rawGroup?.exercises) || rawGroup.exercises.length === 0) {
+      throw new Error(`Le groupe musculaire ${name} doit contenir au moins un exercice`);
+    }
+    const exercises = rawGroup.exercises.map((rawExercise) => String(rawExercise ?? "").trim());
+    exercises.forEach((exercise) => {
+      const identity = catalogSearchKey(exercise);
+      if (!identity) throw new Error(`Exercice vide dans le groupe musculaire ${name}`);
+      if (exerciseIdentities.has(identity)) {
+        throw new Error(`Exercice présent dans plusieurs groupes musculaires : ${exercise}`);
+      }
+      exerciseIdentities.add(identity);
+    });
+    return { name, exercises };
+  });
+};
+
+export const validateCatalogMuscleGroups = (catalogValues, muscleGroups) => {
+  if (!Array.isArray(catalogValues) || catalogValues.length === 0) {
+    throw new Error("Le catalogue d'exercices est vide");
+  }
+  const catalog = catalogValues.map((rawValue) => String(rawValue ?? "").trim());
+  const distinctCatalog = distinctCatalogValues(catalog);
+  if (catalog.some((value) => !value) || distinctCatalog.length !== catalog.length) {
+    throw new Error("Le catalogue d'exercices contient une valeur vide ou en double");
+  }
+  const grouped = normalizeMuscleGroups(muscleGroups);
+  const flattened = grouped.flatMap((group) => group.exercises);
+  if (flattened.length !== catalog.length) {
+    throw new Error("Les groupes musculaires ne forment pas une partition complète du catalogue");
+  }
+  catalog.forEach((exercise, index) => {
+    if (flattened[index] !== exercise) {
+      throw new Error(`Ordre ou nom canonique incohérent pour l'exercice ${exercise}`);
+    }
+  });
+  return true;
+};
+
+export const groupedCatalogPickerOptions = (muscleGroups, currentValues = [], query = "") => {
+  const groups = normalizeMuscleGroups(muscleGroups);
+  const catalog = groups.flatMap((group) => group.exercises);
+  const current = canonicalizeCatalogValues(catalog, currentValues);
+  const catalogIdentities = new Set(catalog.map(catalogSearchKey));
+  const selectedIdentities = new Set(current.map(catalogSearchKey));
+  const queryKey = catalogSearchKey(query);
+  const optionFor = (value, legacy) => ({
+    value,
+    selected: selectedIdentities.has(catalogSearchKey(value)),
+    legacy
+  });
+  const historicalOptions = current
+    .filter((value) => !catalogIdentities.has(catalogSearchKey(value)))
+    .filter((value) => !queryKey || catalogSearchKey(value).includes(queryKey))
+    .map((value) => optionFor(value, true));
+  const result = historicalOptions.length > 0
+    ? [{ name: LEGACY_EXERCISE_GROUP_NAME, legacy: true, options: historicalOptions }]
+    : [];
+  groups.forEach((group) => {
+    const groupMatches = Boolean(queryKey) && catalogSearchKey(group.name).includes(queryKey);
+    const options = group.exercises
+      .filter((value) => !queryKey || groupMatches || catalogSearchKey(value).includes(queryKey))
+      .map((value) => optionFor(value, false));
+    if (options.length > 0) result.push({ name: group.name, legacy: false, options });
+  });
+  return result;
+};
+
 const catalogById = (fixture) => new Map(fixture.catalog.exercises.map((exercise) => [exercise.id, exercise]));
 const toolsById = (fixture) => new Map(fixture.catalog.tools.map((tool) => [tool.id, tool.name]));
 
@@ -202,7 +285,7 @@ const nextCopyOrdinal = (values, marker) => {
 
 const nextGroupLabel = (rows) => {
   const labels = new Set(rows.map((row) => row.groupLabel));
-  for (const label of "CDEFGHIJKLMNOPQRSTUVWXYZ") {
+  for (const label of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
     if (!labels.has(label)) return label;
   }
   return `G${labels.size + 1}`;
@@ -226,7 +309,7 @@ export const duplicateExercise = (model, sessionId, plannedExerciseId) => {
     groupId: copiedGroupId,
     groupLabel: copiedLabel,
     groupType: "simple",
-    exerciseName: `${row.exerciseName} — copie`
+    exerciseName: row.exerciseName
   }));
   const lastIndex = Math.max(...sourceRows.map((row) => session.rows.findIndex((candidate) => candidate.id === row.id)));
   session.rows.splice(lastIndex + 1, 0, ...copiedRows);
@@ -254,7 +337,7 @@ export const duplicateGroup = (model, sessionId, groupId) => {
       plannedExerciseId: copiedExerciseIds.get(row.plannedExerciseId),
       groupId: copiedGroupId,
       groupLabel: copiedLabel,
-      exerciseName: `${row.exerciseName} — copie`
+      exerciseName: row.exerciseName
     };
   });
   const lastIndex = Math.max(...sourceRows.map((row) => session.rows.findIndex((candidate) => candidate.id === row.id)));
@@ -360,6 +443,72 @@ export const insertExerciseWithFirstSeries = (model, sessionId) => {
     plannedSetId: inserted.plannedSetId,
     plannedExerciseId: inserted.plannedExerciseId,
     groupId: inserted.groupId
+  };
+};
+
+export const insertExercisesInEmptySession = (
+  model,
+  sessionId,
+  exerciseNames,
+  { setsPerExercise = 2, targetReps = "9-12", targetRir = 0 } = {}
+) => {
+  const sourceSession = model.sessions.find((candidate) => candidate.id === sessionId);
+  if (!sourceSession) throw new Error("Séance introuvable");
+  if (sourceSession.rows.length !== 0) {
+    throw new Error("La création groupée exige une séance vierge");
+  }
+  if (!Array.isArray(exerciseNames) || exerciseNames.length === 0) {
+    throw new Error("Sélectionnez au moins un exercice");
+  }
+  const normalizedExercises = exerciseNames.map((exerciseName) => (
+    normalizeCoachValue("exerciseName", exerciseName)
+  ));
+  const exerciseIdentities = normalizedExercises.map(catalogSearchKey);
+  if (new Set(exerciseIdentities).size !== exerciseIdentities.length) {
+    throw new Error("Un exercice ne peut être sélectionné qu'une seule fois");
+  }
+  const normalizedSetCount = Number(setsPerExercise);
+  if (!Number.isInteger(normalizedSetCount) || normalizedSetCount < 1 || normalizedSetCount > 10) {
+    throw new Error("Le nombre de séries par exercice doit être un entier entre 1 et 10");
+  }
+  const normalizedTargetReps = normalizeCoachValue("targetReps", targetReps);
+  const normalizedTargetRir = normalizeCoachValue("targetRir", targetRir);
+
+  const next = clone(model);
+  const session = next.sessions.find((candidate) => candidate.id === sessionId);
+  let firstRowId = null;
+  normalizedExercises.forEach((exerciseName) => {
+    const exerciseOrdinal = nextInsertedSeriesOrdinal(next);
+    const plannedExerciseId = `insert-exercise:${exerciseOrdinal}`;
+    const groupId = `insert-group:${exerciseOrdinal}`;
+    const groupLabel = session.rows.length === 0 ? "A" : nextGroupLabel(session.rows);
+    for (let setRank = 1; setRank <= normalizedSetCount; setRank += 1) {
+      const setOrdinal = nextInsertedSeriesOrdinal(next);
+      const row = {
+        id: `coach-row:insert:${setOrdinal}`,
+        plannedSetId: `insert-set:${setOrdinal}`,
+        plannedExerciseId,
+        groupId,
+        groupLabel,
+        groupType: "simple",
+        exerciseName,
+        tools: [],
+        setRank,
+        targetReps: normalizedTargetReps,
+        targetRir: normalizedTargetRir,
+        tempo: "Hérité",
+        restSeconds: 60,
+        technique: ""
+      };
+      session.rows.push(row);
+      firstRowId ??= row.id;
+    }
+  });
+  return {
+    model: next,
+    exerciseCount: normalizedExercises.length,
+    seriesCount: normalizedExercises.length * normalizedSetCount,
+    firstRowId
   };
 };
 

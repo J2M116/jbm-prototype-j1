@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 2,
-  "catalogId": "jbm-initial-prescription-catalog-2026-08-09",
-  "description": "Valeurs initiales configurables fournies par le porteur du projet. L'ordre des tableaux est l'ordre initial d'affichage.",
+  "schemaVersion": 3,
+  "catalogId": "jbm-initial-prescription-catalog-2026-08-11",
+  "description": "Valeurs initiales configurables fournies par le porteur du projet. L'ordre des tableaux et des groupes musculaires est l'ordre initial d'affichage.",
   "rules": {
     "maxToolsPerPlannedExercise": 6,
     "techniqueOptional": true,
@@ -117,6 +117,195 @@
     "Circuit",
     "Dropset mécanique",
     "Partielles"
+  ],
+  "muscleGroups": [
+    {
+      "name": "MOLLETS",
+      "exercises": [
+        "ÉLÉVATIONS DEBOUT",
+        "ÉLÉVATIONS ASSIS",
+        "ÉLÉVATIONS PRESSE",
+        "DONKEY CALF RAISE"
+      ]
+    },
+    {
+      "name": "ISCHIOJAMBIERS",
+      "exercises": [
+        "EXTENSIONS DE HANCHE (I)",
+        "LEG CURL ASSIS",
+        "LEG CURL ALLONGÉ",
+        "LEG CURL DEBOUT",
+        "CURL NORDIQUE",
+        "SOULEVÉ DE TERRE JAMBES TENDUES",
+        "RDL (I)",
+        "SOULEVÉ DE TERRE"
+      ]
+    },
+    {
+      "name": "QUADRICEPS",
+      "exercises": [
+        "FRONT SQUAT",
+        "BACK SQUAT (Q)",
+        "PRESSE HORIZONTALE (Q)",
+        "PRESSE 45° (Q)",
+        "PRESSE VERTICALE (Q)",
+        "HACK SQUAT (Q)",
+        "BELT SQUAT (Q)",
+        "PENDULUM SQUAT (Q)",
+        "FENTES (Q)",
+        "FENTES BULGARES (Q)",
+        "PISTOL SQUAT",
+        "SISSY SQUAT",
+        "LEG EXTENSION",
+        "CHAISE",
+        "SLED PUSH"
+      ]
+    },
+    {
+      "name": "ADDUCTEURS",
+      "exercises": [
+        "ADDUCTION DES CUISSES"
+      ]
+    },
+    {
+      "name": "FESSIERS",
+      "exercises": [
+        "ABDUCTION DES CUISSES",
+        "HIPTHRUST",
+        "KICKBACKS",
+        "EXTENSIONS DE HANCHE (F)",
+        "REVERSE HYPER",
+        "RDL (F)",
+        "BACK SQUAT (F)",
+        "PRESSE HORIZONTALE (F)",
+        "PRESSE 45° (F)",
+        "PRESSE VERTICALE (F)",
+        "HACK SQUAT (F)",
+        "BELT SQUAT (F)",
+        "PENDULUM SQUAT (F)",
+        "FENTES (F)",
+        "FENTES BULGARES (F)",
+        "GLUTE BRIDGE"
+      ]
+    },
+    {
+      "name": "LOMBAIRES",
+      "exercises": [
+        "EXTENSIONS DE COLONNE",
+        "JEFFERSON CURL"
+      ]
+    },
+    {
+      "name": "SANGLE ABDOMINALE",
+      "exercises": [
+        "CRUNCH FRONTAL",
+        "CRUNCH LATÉRAL",
+        "LEVÉES DE JAMBES",
+        "LEVÉES DE GENOUX",
+        "PLANCHE",
+        "HOLLOW HOLD",
+        "ROTATION OBLIQUE",
+        "ROULETTE ABDOS",
+        "VACUUM",
+        "CRUNCH SWISS BALL"
+      ]
+    },
+    {
+      "name": "PECTORAUX",
+      "exercises": [
+        "DÉVELOPPÉ COUCHÉ",
+        "DÉVELOPPÉ INCLINÉ 15°",
+        "DÉVELOPPÉ INCLINÉ 30°",
+        "DÉVELOPPÉ COUCHÉ CONVERGENT",
+        "DÉVELOPPÉ INCLINÉ 15° CONVERGENT",
+        "DÉVELOPPÉ INCLINÉ 30° CONVERGENT",
+        "DÉVELOPPÉ DÉCLINÉ",
+        "DÉVELOPPÉ DÉCLINÉ CONVERGENT",
+        "FLY",
+        "FLY INCLINÉ",
+        "FLY DÉCLINÉ",
+        "PRESS AROUND",
+        "DIPS (P)",
+        "POMPES",
+        "POMPES INCLINÉES",
+        "POMPES DÉCLINÉES",
+        "GUNDILL SHRUGS"
+      ]
+    },
+    {
+      "name": "TRICEPS",
+      "exercises": [
+        "JM PRESS",
+        "PJR PULLOVER",
+        "SKULLCRUSHER",
+        "EXTENSIONS DEVANT LE BUSTE",
+        "EXTENSIONS DERRIÈRE LA NUQUE",
+        "EXTENSIONS KATANA",
+        "EXTENSIONS LATÉRALES",
+        "EXTENSIONS DERRIÈRE LE BUSTE",
+        "PUSHDOWNS",
+        "POMPES (T)",
+        "DÉVELOPPÉ COUCHÉ (T)",
+        "DIPS (T)"
+      ]
+    },
+    {
+      "name": "DELTOÏDE ANTÉRIEUR",
+      "exercises": [
+        "DÉVELOPPÉ MILITAIRE 70-90°",
+        "DÉVELOPPÉ NUQUE",
+        "ÉLÉVATIONS FRONTALES",
+        "DÉVELOPPÉ MILITAIRE CONVERGENT"
+      ]
+    },
+    {
+      "name": "DELTOÏDE MÉDIAN",
+      "exercises": [
+        "ÉLÉVATIONS LATÉRALES",
+        "UPRIGHT ROW",
+        "ÉLÉVATIONS Y"
+      ]
+    },
+    {
+      "name": "DELTOÏDE POSTÉRIEUR",
+      "exercises": [
+        "OISEAU",
+        "FACEPULL (DP)"
+      ]
+    },
+    {
+      "name": "BICEPS",
+      "exercises": [
+        "CURL (POSITION ANATOMIQUE)",
+        "CURL LARRY SCOTT (DEVANT BUSTE)",
+        "CURL BAYESIAN (DERRIÈRE BUSTE)"
+      ]
+    },
+    {
+      "name": "GRAND DORSAL",
+      "exercises": [
+        "ROWING (GD)",
+        "TIRAGE VERTICAL (GD)",
+        "TIRAGE 45° (GD)",
+        "TIRAGE HORIZONTAL (GD)",
+        "HELMS ROW",
+        "SEAL ROW",
+        "TRACTIONS",
+        "PULLOVER"
+      ]
+    },
+    {
+      "name": "HAUT DU DOS",
+      "exercises": [
+        "ROWING (HD)",
+        "TIRAGE VERTICAL (HD)",
+        "TIRAGE 45° (HD)",
+        "TIRAGE HORIZONTAL (HD)",
+        "FACEPULL (HD)",
+        "OVERHEAD SHRUGS",
+        "SHRUGS"
+      ]
+    }
   ],
   "exercises": [
     "ÉLÉVATIONS DEBOUT",

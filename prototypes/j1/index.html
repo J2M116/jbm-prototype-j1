@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="description" content="Prototype J1 des interfaces coach et client de JBM.">
     <title>JBM — Prototype J1</title>
-    <link rel="stylesheet" href="./styles.css?v=20260810.2">
+    <link rel="stylesheet" href="./styles.css?v=20260811.5">
   </head>
   <body>
     <header class="app-header">
@@ -21,7 +21,7 @@
         <a class="view-tab" data-view-link="coach" href="#coach">Coach · Web</a>
         <a class="view-tab" data-view-link="client" href="#client">Client · Mobile</a>
       </nav>
-      <span class="prototype-pill">Prototype J1 · build 2026-08-10.2 · données fictives</span>
+      <span class="prototype-pill">Prototype J1 · build 2026-08-11.5 · données fictives</span>
     </header>
 
     <main>
@@ -83,8 +83,8 @@
           <section class="coach-toolbar" aria-label="Actions de la grille">
             <div class="toolbar-group">
               <span class="toolbar-label">Série</span>
-              <button id="insert-series-before" class="tool-button" type="button">＋ Avant</button>
-              <button id="insert-series-after" class="tool-button" type="button">＋ Après</button>
+              <button id="insert-series-before" class="tool-button" type="button" disabled aria-busy="true">Chargement…</button>
+              <button id="insert-series-after" class="tool-button" type="button" disabled aria-busy="true">Chargement…</button>
               <button id="remove-series" class="tool-button tool-button-danger" type="button" aria-label="Supprimer la série">− Supprimer</button>
             </div>
             <div class="toolbar-divider" aria-hidden="true"></div>
@@ -154,7 +154,8 @@
               <span class="metric-value" id="undo-depth">0</span>
               <span class="metric-label">actions annulables</span>
             </div>
-            <p id="coach-activity" class="activity-message" aria-live="polite" tabindex="0">Prêt pour le test coach.</p>
+            <p id="coach-activity" class="activity-message" aria-live="polite" tabindex="0">Chargement du prototype…</p>
+            <button id="retry-prototype-load" class="button button-secondary" type="button" hidden>Réessayer le chargement</button>
           </div>
         </div>
       </section>
@@ -297,15 +298,65 @@
         </div>
         <button class="icon-button" value="cancel" aria-label="Fermer">×</button>
       </form>
-      <label for="exercise-picker-search">Rechercher dans les 112 exercices initiaux</label>
+      <label id="exercise-picker-search-label" for="exercise-picker-search">Rechercher dans le catalogue d’exercices</label>
       <input id="exercise-picker-search" class="tool-picker-search" type="search" autocomplete="off" placeholder="Ex. développé, curl, squat…">
       <div class="tool-picker-summary">
         <strong id="exercise-picker-count" aria-live="polite">112 résultats · 1 exercice sélectionné</strong>
+        <div class="muscle-group-actions" aria-label="Affichage des groupes musculaires">
+          <button id="collapse-exercise-picker-groups" class="button button-ghost" type="button">Tout replier</button>
+          <button id="expand-exercise-picker-groups" class="button button-ghost" type="button">Tout déplier</button>
+        </div>
       </div>
-      <div id="exercise-picker-options" class="tool-picker-options" role="radiogroup" aria-label="Exercices disponibles"></div>
+      <div id="exercise-picker-options" class="tool-picker-options grouped-catalog" role="radiogroup" aria-label="Exercices disponibles par groupe musculaire"></div>
       <div class="dialog-actions">
         <button id="cancel-exercise-picker" class="button button-secondary" type="button">Annuler</button>
         <button id="apply-exercise-picker" class="button button-primary" type="button">Appliquer l’exercice</button>
+      </div>
+    </dialog>
+
+    <dialog id="exercise-builder-dialog" class="prototype-dialog tool-picker-dialog exercise-builder-dialog" aria-labelledby="exercise-builder-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Création rapide</p>
+          <h2 id="exercise-builder-title">Composer une séance vierge</h2>
+          <p>Sélectionnez plusieurs exercices par groupe musculaire. Ils seront ajoutés dans l’ordre du catalogue, en une seule action annulable.</p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer sans créer">×</button>
+      </form>
+      <label id="exercise-builder-search-label" for="exercise-builder-search">Rechercher dans le catalogue d’exercices</label>
+      <input id="exercise-builder-search" class="tool-picker-search" type="search" autocomplete="off" placeholder="Ex. pectoraux, curl, squat…">
+      <div class="tool-picker-summary exercise-builder-summary">
+        <div class="picker-summary-copy">
+          <strong id="exercise-builder-results">112 résultats dans 15 groupes</strong>
+          <span id="exercise-builder-count" aria-live="polite">0 exercice · 0 série</span>
+        </div>
+        <div class="muscle-group-actions" aria-label="Actions sur le catalogue d’exercices">
+          <button id="collapse-exercise-builder-groups" class="button button-ghost" type="button">Tout replier</button>
+          <button id="expand-exercise-builder-groups" class="button button-ghost" type="button">Tout déplier</button>
+          <button id="clear-exercise-builder" class="button button-ghost" type="button" disabled>Tout retirer</button>
+        </div>
+      </div>
+      <div id="exercise-builder-options" class="tool-picker-options grouped-catalog" role="group" aria-label="Exercices à créer, regroupés par groupe musculaire"></div>
+      <section class="exercise-builder-defaults" aria-labelledby="exercise-builder-defaults-title">
+        <div>
+          <h3 id="exercise-builder-defaults-title">Valeurs du lot</h3>
+          <p>Ces valeurs restent modifiables dans la grille après création.</p>
+        </div>
+        <div class="exercise-builder-fields">
+          <label for="exercise-builder-series">Séries par exercice
+            <input id="exercise-builder-series" type="number" inputmode="numeric" min="1" max="10" step="1" value="2" required>
+          </label>
+          <label for="exercise-builder-repetitions">Répétitions
+            <select id="exercise-builder-repetitions"></select>
+          </label>
+          <label for="exercise-builder-rir">RIR
+            <select id="exercise-builder-rir"></select>
+          </label>
+        </div>
+      </section>
+      <div class="dialog-actions">
+        <button id="cancel-exercise-builder" class="button button-secondary" type="button">Annuler</button>
+        <button id="apply-exercise-builder" class="button button-primary" type="button" disabled>Choisir au moins un exercice</button>
       </div>
     </dialog>
 
@@ -399,6 +450,72 @@
     <datalist id="rest-preset-options"></datalist>
     <datalist id="technique-options"></datalist>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./app.js?v=20260810.2"></script>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const activity = document.getElementById("coach-activity");
+        const retryButton = document.getElementById("retry-prototype-load");
+
+        const clearLoadTimers = () => {
+          const timers = Array.isArray(window.__j1PrototypeLoadTimers)
+            ? window.__j1PrototypeLoadTimers
+            : [];
+          timers.forEach((timer) => window.clearTimeout(timer));
+          window.__j1PrototypeLoadTimers = [];
+        };
+
+        const failModuleLoad = (error) => {
+          clearLoadTimers();
+          root.dataset.prototypeLoadState = "failed";
+          root.dataset.prototypeLoadFailed = "true";
+          root.dataset.prototypeModuleState = "failed";
+          activity.textContent = "Impossible de charger le moteur du prototype. Vérifiez que « make prototype-j1 » est toujours en cours, puis réessayez.";
+          retryButton.hidden = false;
+          console.error("Échec du chargement du module J1", error);
+        };
+
+        const startLoadWatch = () => {
+          clearLoadTimers();
+          root.dataset.prototypeLoadState = "loading";
+          delete root.dataset.prototypeLoadFailed;
+          retryButton.hidden = true;
+          window.__j1PrototypeLoadTimers = [
+            window.setTimeout(() => {
+              if (root.dataset.prototypeLoadState !== "loading") return;
+              root.dataset.prototypeLoadState = "slow";
+              activity.textContent = "Chargement plus long que prévu… L’initialisation continue.";
+            }, 4000),
+            window.setTimeout(() => {
+              if (!["loading", "slow"].includes(root.dataset.prototypeLoadState)) return;
+              root.dataset.prototypeLoadState = "stalled";
+              activity.textContent = "Le chargement prend anormalement longtemps. Le prototype continue d’essayer ; vous pouvez aussi relancer le chargement.";
+              retryButton.hidden = false;
+            }, 15000)
+          ];
+        };
+
+        if (window.location.protocol === "file:") {
+          const serverUrl = new URL("http://127.0.0.1:4173/prototypes/j1/");
+          serverUrl.hash = window.location.hash || "#coach";
+          activity.textContent = "Ouverture du prototype depuis son serveur local…";
+          window.location.replace(serverUrl.href);
+          return;
+        }
+
+        const loadPrototypeModule = () => {
+          startLoadWatch();
+          root.dataset.prototypeModuleState = "loading";
+          import("./app.js?v=20260811.5")
+            .then(() => {
+              root.dataset.prototypeModuleState = "loaded";
+            })
+            .catch(failModuleLoad);
+        };
+
+        retryButton.addEventListener("click", () => window.location.reload());
+        window.__j1LoadPrototypeModule = loadPrototypeModule;
+        loadPrototypeModule();
+      })();
+    </script>
   </body>
 </html>

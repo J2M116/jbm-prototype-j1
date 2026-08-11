@@ -12,6 +12,8 @@ import {
   copyCoachRectangle,
   duplicateExercise,
   duplicateSession,
+  groupedCatalogPickerOptions,
+  insertExercisesInEmptySession,
   insertSeriesAtSelection,
   normalizeCoachValue,
   formatRestDuration,
@@ -27,8 +29,9 @@ import {
   serializeClientPrototype,
   timingResult,
   updateCoachCell,
-  upgradeCoachDraftModel
-} from "./prototype-state.mjs?v=20260810.2";
+  upgradeCoachDraftModel,
+  validateCatalogMuscleGroups
+} from "./prototype-state.mjs?v=20260811.5";
 
 const FIXTURE_URL = "../../sample-data/jbm-alpha.fixture.json";
 const PRESCRIPTION_CATALOG_URL = "../../sample-data/jbm-initial-prescription-catalog.json";
@@ -71,6 +74,7 @@ let selection = { anchor: null, focus: null };
 let coachClipboard = null;
 let pastePreview = null;
 let exercisePickerContext = null;
+let exerciseBuilderContext = null;
 let toolPickerContext = null;
 let prescriptionPickerContext = null;
 let activeMobileScreen = "today";
@@ -101,6 +105,25 @@ const showToast = (message) => {
 
 const setCoachActivity = (message) => {
   byId("coach-activity").textContent = message;
+};
+
+const settlePrototypeLoading = (state) => {
+  const root = document.documentElement;
+  const timers = Array.isArray(window.__j1PrototypeLoadTimers)
+    ? window.__j1PrototypeLoadTimers
+    : [];
+  timers.forEach((timer) => window.clearTimeout(timer));
+  window.__j1PrototypeLoadTimers = [];
+  root.dataset.prototypeLoadState = state;
+  if (state === "ready") {
+    root.dataset.prototypeReady = "true";
+    delete root.dataset.prototypeLoadFailed;
+  } else if (state === "failed") {
+    root.dataset.prototypeLoadFailed = "true";
+    delete root.dataset.prototypeReady;
+  }
+  const retryButton = byId("retry-prototype-load");
+  if (retryButton) retryButton.hidden = true;
 };
 
 const readClientStorage = () => {
@@ -307,23 +330,24 @@ const syncCoachActionState = () => {
   const hasSelection = hasRows && selectedCellIds().length > 0;
   ["insert-series-before", "insert-series-after"].forEach((id) => {
     const button = byId(id);
+    button.removeAttribute("aria-busy");
     button.disabled = !session;
     button.textContent = hasRows
       ? id === "insert-series-before" ? "＋ Avant" : "＋ Après"
-      : "＋ 1er exercice";
+      : "＋ Composer";
     if (hasRows) {
       button.removeAttribute("aria-label");
     } else {
       button.setAttribute(
         "aria-label",
-        `Créer le premier exercice — commande ${id === "insert-series-before" ? "Avant" : "Après"}`
+        `Composer la séance vierge — commande ${id === "insert-series-before" ? "Avant" : "Après"}`
       );
     }
     button.title = !session
       ? "Sélectionnez d'abord une séance"
       : hasRows
       ? "Ajouter une série par rapport à la série active"
-      : "Créer le premier exercice et sa première série";
+      : "Choisir plusieurs exercices et leurs valeurs par défaut";
   });
   [
     "remove-series",
@@ -371,6 +395,15 @@ const renderPrescriptionDatalists = () => {
     prescriptionCatalog.restPresets.map((preset) => preset.label)
   );
   byId("technique-options").innerHTML = renderOptions(prescriptionCatalog.techniques);
+  const exerciseSearchLabel = `Rechercher dans les ${prescriptionCatalog.exercises.length} exercices configurés`;
+  byId("exercise-picker-search-label").textContent = exerciseSearchLabel;
+  byId("exercise-builder-search-label").textContent = exerciseSearchLabel;
+  byId("exercise-builder-repetitions").innerHTML = prescriptionCatalog.repetitionTargets
+    .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+    .join("");
+  byId("exercise-builder-rir").innerHTML = Array.from({ length: 21 }, (_, index) => index / 2)
+    .map((value) => `<option value="${value}">${displayValue(value)}</option>`)
+    .join("");
 };
 
 const catalogPickerPresentation = (field, row) => ({
@@ -408,9 +441,9 @@ const renderCoachGrid = (focusCellId = null) => {
       <td class="grid-empty-message" role="gridcell" colspan="${COACH_COLUMNS.length}">
         <div class="grid-empty-content">
           <strong>Cette séance est vierge</strong>
-          <p>Créez le premier exercice avec sa série nº 1, ou collez des lignes depuis Sheets.</p>
+          <p>Choisissez un ou plusieurs exercices par groupe musculaire, ou collez des lignes depuis Sheets.</p>
           <button id="add-first-exercise" class="button button-primary" type="button">
-            ＋ Créer le premier exercice
+            ＋ Composer la séance
           </button>
         </div>
       </td>
@@ -427,7 +460,6 @@ const renderCoachGrid = (focusCellId = null) => {
         ? ' readonly aria-readonly="true" title="Calculé d’après l’ordre des séries"'
         : "";
       const listId = {
-        exerciseName: "exercise-options",
         tools: "tool-options",
         targetReps: "repetition-target-options",
         restSeconds: "rest-preset-options",
@@ -461,7 +493,7 @@ const renderCoachGrid = (focusCellId = null) => {
     }).join("")}</tr>`;
   }).join("");
 
-  byId("add-first-exercise")?.addEventListener("click", () => insertSelectedSeries("after"));
+  byId("add-first-exercise")?.addEventListener("click", openExerciseBuilder);
   bindCoachGridEvents();
   byId("row-count").textContent = session.rows.length;
   byId("selection-count").textContent = selected.size;
@@ -840,27 +872,93 @@ const scheduleCoachGridRefresh = () => {
   }, 0);
 };
 
+const exerciseMuscleGroups = () => Array.isArray(prescriptionCatalog.muscleGroups)
+  && prescriptionCatalog.muscleGroups.length > 0
+  ? prescriptionCatalog.muscleGroups
+  : [{ name: "EXERCICES", exercises: prescriptionCatalog.exercises }];
+
+const groupedExerciseOptionHtml = (option, inputHtml) => (
+  `<label class="tool-picker-option ${option.selected ? "is-selected" : ""} ${option.legacy ? "is-legacy" : ""}">
+    ${inputHtml}
+    <span><strong>${escapeHtml(option.value)}</strong>${option.legacy ? "<small>Valeur existante hors catalogue</small>" : ""}</span>
+  </label>`
+);
+
+const groupedExerciseCatalogHtml = (groups, context, mode) => groups.map((group) => {
+  const forcedOpen = context.query.trim().length > 0;
+  const isOpen = forcedOpen || context.openGroups.has(group.name);
+  const options = group.options.map((option) => {
+    const inputHtml = mode === "single"
+      ? `<input type="radio" name="exercise-picker-choice" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""}>`
+      : `<input type="checkbox" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""}>`;
+    return groupedExerciseOptionHtml(option, inputHtml);
+  }).join("");
+  const allVisibleOptionsSelected = group.options.every((option) => option.selected);
+  const groupActionTarget = context.query.trim() ? "ces résultats" : "ce groupe";
+  const groupAction = mode === "multiple"
+    ? `<button class="muscle-group-select" type="button" data-builder-toggle-group="${escapeHtml(group.name)}">
+        ${allVisibleOptionsSelected ? `Retirer ${groupActionTarget}` : `Sélectionner ${groupActionTarget}`}
+      </button>`
+    : "";
+  return `<details class="muscle-group" data-muscle-group="${escapeHtml(group.name)}" ${isOpen ? "open" : ""}>
+    <summary>
+      <span>${escapeHtml(group.name)}</span>
+      <span class="muscle-group-count">${group.options.length} exercice${group.options.length > 1 ? "s" : ""}</span>
+    </summary>
+    <div class="muscle-group-body">
+      ${groupAction}
+      <div class="muscle-group-options">${options}</div>
+    </div>
+  </details>`;
+}).join("");
+
+const bindMuscleGroupDisclosures = (container, context) => {
+  container.querySelectorAll("details[data-muscle-group]").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      if (context.query.trim()) return;
+      if (details.open) context.openGroups.add(details.dataset.muscleGroup);
+      else context.openGroups.delete(details.dataset.muscleGroup);
+    });
+  });
+};
+
+const exercisePickerGroups = (currentValues, query = "") => groupedCatalogPickerOptions(
+  exerciseMuscleGroups(),
+  currentValues,
+  query
+);
+
+const setExerciseGroupExpansion = (context, currentValues, expanded, renderer) => {
+  const groups = exercisePickerGroups(currentValues, "");
+  context.openGroups = new Set(expanded ? groups.map((group) => group.name) : []);
+  renderer();
+};
+
 const renderExercisePickerOptions = () => {
   if (!exercisePickerContext) return;
-  const options = catalogPickerOptions(
-    prescriptionCatalog.exercises,
-    exercisePickerContext.value,
-    byId("exercise-picker-search").value
+  exercisePickerContext.query = byId("exercise-picker-search").value;
+  const groups = exercisePickerGroups(
+    [exercisePickerContext.value],
+    exercisePickerContext.query
   );
-
-  byId("exercise-picker-options").innerHTML = options.length > 0
-    ? options.map((option) => `<label class="tool-picker-option ${option.selected ? "is-selected" : ""} ${option.legacy ? "is-legacy" : ""}">
-        <input type="radio" name="exercise-picker-choice" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""}>
-        <span><strong>${escapeHtml(option.value)}</strong>${option.legacy ? "<small>Valeur existante hors catalogue</small>" : ""}</span>
-      </label>`).join("")
+  const optionCount = groups.reduce((count, group) => count + group.options.length, 0);
+  const container = byId("exercise-picker-options");
+  container.innerHTML = optionCount > 0
+    ? groupedExerciseCatalogHtml(groups, exercisePickerContext, "single")
     : '<p class="tool-picker-empty">Aucun exercice ne correspond à cette recherche.</p>';
 
-  const resultLabel = `${options.length} résultat${options.length > 1 ? "s" : ""}`;
-  byId("exercise-picker-count").textContent = `${resultLabel} · 1 exercice sélectionné`;
-  document.querySelectorAll('#exercise-picker-options input[type="radio"]').forEach((radio) => {
+  const resultLabel = `${optionCount} résultat${optionCount > 1 ? "s" : ""}`;
+  byId("exercise-picker-count").textContent = `${resultLabel} dans ${groups.length} groupe${groups.length > 1 ? "s" : ""} musculaire${groups.length > 1 ? "s" : ""} · 1 sélectionné`;
+  const searchActive = exercisePickerContext.query.trim().length > 0;
+  byId("collapse-exercise-picker-groups").disabled = searchActive;
+  byId("expand-exercise-picker-groups").disabled = searchActive;
+  bindMuscleGroupDisclosures(container, exercisePickerContext);
+  container.querySelectorAll('input[type="radio"]').forEach((radio) => {
     radio.addEventListener("change", () => {
       exercisePickerContext.value = radio.value;
-      document.querySelectorAll("#exercise-picker-options .tool-picker-option").forEach((label) => {
+      const groupName = radio.closest("details[data-muscle-group]")?.dataset.muscleGroup;
+      if (groupName) exercisePickerContext.openGroups.add(groupName);
+      container.querySelectorAll(".tool-picker-option").forEach((label) => {
         label.classList.toggle("is-selected", label.querySelector("input")?.checked === true);
       });
     });
@@ -880,7 +978,14 @@ const openExercisePicker = (rowId) => {
   if (!prepareCoachCommand()) return;
   const row = selectedSession()?.rows.find((candidate) => candidate.id === rowId);
   if (!row) return;
-  exercisePickerContext = { rowId, value: row.exerciseName };
+  const groups = exercisePickerGroups([row.exerciseName]);
+  const currentGroup = groups.find((group) => group.options.some((option) => option.selected));
+  exercisePickerContext = {
+    rowId,
+    value: row.exerciseName,
+    query: "",
+    openGroups: new Set(currentGroup ? [currentGroup.name] : [])
+  };
   byId("exercise-picker-current").textContent = row.exerciseName;
   byId("exercise-picker-search").value = "";
   renderExercisePickerOptions();
@@ -935,6 +1040,167 @@ const applyExercisePicker = () => {
   } catch (error) {
     showToast(error.message);
     setCoachActivity(`Exercice non appliqué : ${error.message}`);
+  }
+};
+
+const exerciseBuilderOrderedSelection = () => {
+  const selected = new Set(exerciseBuilderContext?.values ?? []);
+  return exerciseMuscleGroups()
+    .flatMap((group) => group.exercises)
+    .filter((exerciseName) => selected.has(exerciseName));
+};
+
+const exerciseBuilderDefaults = () => ({
+  setsPerExercise: Number(byId("exercise-builder-series").value),
+  targetReps: byId("exercise-builder-repetitions").value,
+  targetRir: Number(byId("exercise-builder-rir").value)
+});
+
+const syncExerciseBuilderSummary = (visibleOptionCount = null, visibleGroupCount = null) => {
+  if (!exerciseBuilderContext) return;
+  const values = exerciseBuilderOrderedSelection();
+  const defaults = exerciseBuilderDefaults();
+  const seriesInput = byId("exercise-builder-series");
+  const validDefaults = seriesInput.checkValidity()
+    && Number.isInteger(defaults.setsPerExercise)
+    && defaults.setsPerExercise >= 1
+    && defaults.setsPerExercise <= 10;
+  const seriesCount = validDefaults ? values.length * defaults.setsPerExercise : 0;
+  if (visibleOptionCount !== null) {
+    const groupLabel = `${visibleGroupCount} groupe${visibleGroupCount > 1 ? "s" : ""}`;
+    byId("exercise-builder-results").textContent = `${visibleOptionCount} résultat${visibleOptionCount > 1 ? "s" : ""} dans ${groupLabel}`;
+  }
+  byId("exercise-builder-count").textContent = validDefaults
+    ? `${values.length} exercice${values.length > 1 ? "s" : ""} · ${seriesCount} série${seriesCount > 1 ? "s" : ""}`
+    : `${values.length} exercice${values.length > 1 ? "s" : ""} · nombre de séries invalide`;
+  const applyButton = byId("apply-exercise-builder");
+  applyButton.disabled = values.length === 0 || !validDefaults;
+  applyButton.textContent = values.length === 0
+    ? "Choisir au moins un exercice"
+    : `Créer ${values.length} exercice${values.length > 1 ? "s" : ""} · ${seriesCount} série${seriesCount > 1 ? "s" : ""}`;
+  byId("clear-exercise-builder").disabled = values.length === 0;
+};
+
+const focusExerciseBuilderOption = (value) => {
+  const option = [...document.querySelectorAll('#exercise-builder-options input[type="checkbox"]')]
+    .find((candidate) => candidate.value === value);
+  option?.focus({ preventScroll: true });
+};
+
+const renderExerciseBuilderOptions = () => {
+  if (!exerciseBuilderContext) return;
+  exerciseBuilderContext.query = byId("exercise-builder-search").value;
+  const groups = exercisePickerGroups(
+    exerciseBuilderContext.values,
+    exerciseBuilderContext.query
+  );
+  const optionCount = groups.reduce((count, group) => count + group.options.length, 0);
+  const container = byId("exercise-builder-options");
+  container.innerHTML = optionCount > 0
+    ? groupedExerciseCatalogHtml(groups, exerciseBuilderContext, "multiple")
+    : '<p class="tool-picker-empty">Aucun exercice ne correspond à cette recherche.</p>';
+  bindMuscleGroupDisclosures(container, exerciseBuilderContext);
+  syncExerciseBuilderSummary(optionCount, groups.length);
+  const searchActive = exerciseBuilderContext.query.trim().length > 0;
+  byId("collapse-exercise-builder-groups").disabled = searchActive;
+  byId("expand-exercise-builder-groups").disabled = searchActive;
+
+  container.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+    checkbox.addEventListener("change", () => {
+      const changedValue = checkbox.value;
+      const groupName = checkbox.closest("details[data-muscle-group]")?.dataset.muscleGroup;
+      if (groupName) exerciseBuilderContext.openGroups.add(groupName);
+      exerciseBuilderContext.values = checkbox.checked
+        ? [...exerciseBuilderContext.values, changedValue]
+        : exerciseBuilderContext.values.filter((value) => value !== changedValue);
+      renderExerciseBuilderOptions();
+      focusExerciseBuilderOption(changedValue);
+    });
+    checkbox.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      checkbox.click();
+    });
+  });
+  container.querySelectorAll("[data-builder-toggle-group]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = groups.find((candidate) => candidate.name === button.dataset.builderToggleGroup);
+      if (!group) return;
+      const groupValues = group.options.map((option) => option.value);
+      const selected = new Set(exerciseBuilderContext.values);
+      const allSelected = groupValues.every((value) => selected.has(value));
+      exerciseBuilderContext.openGroups.add(group.name);
+      groupValues.forEach((value) => {
+        if (allSelected) selected.delete(value);
+        else selected.add(value);
+      });
+      exerciseBuilderContext.values = [...selected];
+      renderExerciseBuilderOptions();
+      const reopenedGroup = [...document.querySelectorAll("#exercise-builder-options details")]
+        .find((details) => details.dataset.muscleGroup === group.name);
+      reopenedGroup?.querySelector("[data-builder-toggle-group]")?.focus({ preventScroll: true });
+    });
+  });
+};
+
+const openExerciseBuilder = () => {
+  if (!prepareCoachCommand()) return;
+  const session = selectedSession();
+  if (!session || session.rows.length > 0) {
+    showToast("La composition multiple est réservée à une séance vierge.");
+    return;
+  }
+  exerciseBuilderContext = {
+    values: [],
+    query: "",
+    openGroups: new Set()
+  };
+  byId("exercise-builder-search").value = "";
+  byId("exercise-builder-series").value = "2";
+  byId("exercise-builder-repetitions").value = prescriptionCatalog.repetitionTargets.includes("9-12")
+    ? "9-12"
+    : prescriptionCatalog.repetitionTargets[0];
+  byId("exercise-builder-rir").value = "0";
+  renderExerciseBuilderOptions();
+  byId("exercise-builder-dialog").showModal();
+  byId("exercise-builder-search").focus({ preventScroll: true });
+};
+
+const closeExerciseBuilder = () => {
+  if (byId("exercise-builder-dialog").open) byId("exercise-builder-dialog").close();
+  exerciseBuilderContext = null;
+};
+
+const applyExerciseBuilder = () => {
+  if (!exerciseBuilderContext) return;
+  const exerciseNames = exerciseBuilderOrderedSelection();
+  const defaults = exerciseBuilderDefaults();
+  if (!byId("exercise-builder-series").reportValidity() || exerciseNames.length === 0) return;
+  try {
+    const result = insertExercisesInEmptySession(
+      coachModel,
+      coachModel.selectedSessionId,
+      exerciseNames,
+      defaults
+    );
+    const firstCellId = `${result.firstRowId}::exerciseName`;
+    selection = {
+      anchor: { rowId: result.firstRowId, columnKey: "exerciseName" },
+      focus: { rowId: result.firstRowId, columnKey: "exerciseName" }
+    };
+    const committed = commitCoachModel(
+      result.model,
+      `${result.exerciseCount} exercice(s) et ${result.seriesCount} série(s) créés en une action annulable.`,
+      false
+    );
+    if (!committed) return;
+    closeExerciseBuilder();
+    renderCoach(firstCellId);
+    showToast(`${result.exerciseCount} exercice(s) ajoutés dans l’ordre du catalogue.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erreur inconnue";
+    showToast(message);
+    setCoachActivity(`Composition non appliquée : ${message}.`);
   }
 };
 
@@ -1438,6 +1704,10 @@ const selectedCoachRow = () => {
 
 const insertSelectedSeries = (position) => {
   if (!prepareCoachCommand()) return;
+  if (selectedSession()?.rows.length === 0) {
+    openExerciseBuilder();
+    return;
+  }
   const row = selectedCoachRow();
   const columnKey = row ? selection.focus?.columnKey ?? "exerciseName" : "exerciseName";
   try {
@@ -2124,10 +2394,74 @@ const bindStaticEvents = () => {
     nextOption.focus({ preventScroll: false });
     nextOption.scrollIntoView({ block: "nearest" });
   });
+  byId("collapse-exercise-picker-groups").addEventListener("click", () => {
+    if (!exercisePickerContext) return;
+    setExerciseGroupExpansion(
+      exercisePickerContext,
+      [exercisePickerContext.value],
+      false,
+      renderExercisePickerOptions
+    );
+  });
+  byId("expand-exercise-picker-groups").addEventListener("click", () => {
+    if (!exercisePickerContext) return;
+    setExerciseGroupExpansion(
+      exercisePickerContext,
+      [exercisePickerContext.value],
+      true,
+      renderExercisePickerOptions
+    );
+  });
   byId("apply-exercise-picker").addEventListener("click", applyExercisePicker);
   byId("cancel-exercise-picker").addEventListener("click", closeExercisePicker);
   byId("exercise-picker-dialog").addEventListener("close", () => {
     exercisePickerContext = null;
+  });
+  byId("exercise-builder-search").addEventListener("input", () => {
+    renderExerciseBuilderOptions();
+    byId("exercise-builder-options").scrollTop = 0;
+  });
+  byId("exercise-builder-search").addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+    const options = [...document.querySelectorAll('#exercise-builder-options input[type="checkbox"]')];
+    if (options.length === 0) return;
+    event.preventDefault();
+    const nextOption = event.key === "ArrowDown" ? options[0] : options.at(-1);
+    nextOption.focus({ preventScroll: false });
+    nextOption.scrollIntoView({ block: "nearest" });
+  });
+  byId("collapse-exercise-builder-groups").addEventListener("click", () => {
+    if (!exerciseBuilderContext) return;
+    setExerciseGroupExpansion(
+      exerciseBuilderContext,
+      exerciseBuilderContext.values,
+      false,
+      renderExerciseBuilderOptions
+    );
+  });
+  byId("expand-exercise-builder-groups").addEventListener("click", () => {
+    if (!exerciseBuilderContext) return;
+    setExerciseGroupExpansion(
+      exerciseBuilderContext,
+      exerciseBuilderContext.values,
+      true,
+      renderExerciseBuilderOptions
+    );
+  });
+  byId("clear-exercise-builder").addEventListener("click", () => {
+    if (!exerciseBuilderContext) return;
+    exerciseBuilderContext.values = [];
+    renderExerciseBuilderOptions();
+  });
+  ["exercise-builder-series", "exercise-builder-repetitions", "exercise-builder-rir"].forEach((id) => {
+    byId(id).addEventListener(id === "exercise-builder-series" ? "input" : "change", () => {
+      syncExerciseBuilderSummary();
+    });
+  });
+  byId("apply-exercise-builder").addEventListener("click", applyExerciseBuilder);
+  byId("cancel-exercise-builder").addEventListener("click", closeExerciseBuilder);
+  byId("exercise-builder-dialog").addEventListener("close", () => {
+    exerciseBuilderContext = null;
   });
   byId("tool-picker-search").addEventListener("input", renderToolPickerOptions);
   byId("clear-tool-picker").addEventListener("click", () => {
@@ -2220,13 +2554,16 @@ const bindStaticEvents = () => {
 };
 
 const showLoadFailure = (error) => {
+  settlePrototypeLoading("failed");
   document.querySelector("main").innerHTML = `
     <section class="load-error">
       <p class="eyebrow">Prototype indisponible</p>
       <h1>Impossible de charger les données fictives</h1>
       <p>${escapeHtml(error.message)}</p>
       <p>Lancez le serveur depuis la racine du dépôt avec <code>make prototype-j1</code>.</p>
+      <button id="retry-prototype-load-failure" class="button button-primary" type="button">Réessayer le chargement</button>
     </section>`;
+  byId("retry-prototype-load-failure").addEventListener("click", () => window.location.reload());
 };
 
 const init = async () => {
@@ -2239,12 +2576,20 @@ const init = async () => {
     if (!catalogResponse.ok) throw new Error(`Catalogue : réponse HTTP ${catalogResponse.status}`);
     fixture = await fixtureResponse.json();
     prescriptionCatalog = await catalogResponse.json();
+    validateCatalogMuscleGroups(
+      prescriptionCatalog.exercises,
+      prescriptionCatalog.muscleGroups
+    );
     renderPrescriptionDatalists();
     coachModel = restoreCoachDraft(fixture);
     clientModel = restoreClientPrototype(fixture, readClientStorage());
     bindStaticEvents();
     syncIndicators();
     renderCoach();
+    renderToday();
+    renderWorkout();
+    route();
+    settlePrototypeLoading("ready");
     if (coachDraftRestoreWarning) {
       setCoachActivity(coachDraftRestoreWarning);
       showToast(coachDraftExactBackupCreated
@@ -2252,10 +2597,9 @@ const init = async () => {
         : "Ancien brouillon restauré ; les valeurs sources restent conservées.");
     } else if (coachDraftRestored) {
       setCoachActivity("Brouillon coach local restauré prudemment.");
+    } else {
+      setCoachActivity("Prêt pour le test coach.");
     }
-    renderToday();
-    renderWorkout();
-    route();
   } catch (error) {
     showLoadFailure(error);
   }
