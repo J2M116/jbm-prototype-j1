@@ -11,7 +11,6 @@ import {
   coachValuesEqual,
   copyCoachRectangle,
   duplicateExercise,
-  duplicateGroup,
   duplicateSession,
   insertSeriesAtSelection,
   normalizeCoachValue,
@@ -21,6 +20,7 @@ import {
   parseSpreadsheetPaste,
   pasteCoachRectangle,
   rectangularCellIds,
+  removeExercise,
   removeSeries,
   restoreClientPrototype,
   saveClientSet,
@@ -28,7 +28,7 @@ import {
   timingResult,
   updateCoachCell,
   upgradeCoachDraftModel
-} from "./prototype-state.mjs?v=20260809.1";
+} from "./prototype-state.mjs?v=20260810.2";
 
 const FIXTURE_URL = "../../sample-data/jbm-alpha.fixture.json";
 const PRESCRIPTION_CATALOG_URL = "../../sample-data/jbm-initial-prescription-catalog.json";
@@ -86,6 +86,8 @@ let restInterval = null;
 let toastTimeout = null;
 let coachGridRefreshTimeout = null;
 let programmaticCoachFocusCellId = null;
+let coachPointerSelection = null;
+let suppressCoachGridClick = false;
 
 const showToast = (message) => {
   const toast = byId("toast");
@@ -325,8 +327,8 @@ const syncCoachActionState = () => {
   });
   [
     "remove-series",
-    "duplicate-exercise",
-    "duplicate-group"
+    "remove-exercise",
+    "duplicate-exercise"
   ].forEach((id) => { byId(id).disabled = !hasRows; });
   ["bulk-field", "bulk-value", "apply-bulk-edit"].forEach((id) => {
     byId(id).disabled = !hasRows;
@@ -1220,16 +1222,92 @@ const applyPrescriptionPicker = () => {
   }
 };
 
-const bindCoachGridEvents = () => {
-  document.querySelectorAll(".grid-cell").forEach((cell) => {
-    cell.addEventListener("pointerdown", (event) => {
-      const nextCell = { rowId: cell.dataset.rowId, columnKey: cell.dataset.columnKey };
-      selection = event.shiftKey && selection.anchor
-        ? { anchor: selection.anchor, focus: nextCell }
-        : { anchor: nextCell, focus: nextCell };
-      repaintCoachSelection();
-    });
+const coachCellFromPointerTarget = (target) => {
+  const cell = target?.closest?.(".grid-cell");
+  return cell && document.querySelector(".coach-grid")?.contains(cell) ? cell : null;
+};
+
+const coachSelectionCell = (cell) => ({
+  rowId: cell.dataset.rowId,
+  columnKey: cell.dataset.columnKey
+});
+
+const finishCoachPointerSelection = ({ suppressClick = false } = {}) => {
+  const wasDragging = coachPointerSelection?.dragging === true;
+  coachPointerSelection = null;
+  document.body.classList.remove("is-drag-selecting");
+  if (!wasDragging) return;
+  if (suppressClick) {
+    suppressCoachGridClick = true;
+    window.setTimeout(() => { suppressCoachGridClick = false; }, 0);
+  }
+  setCoachActivity(`${selectedCellIds().length} cellule(s) sélectionnée(s) à la souris.`);
+};
+
+const beginCoachPointerSelection = (event) => {
+  if (event.pointerType !== "mouse" || event.button !== 0) return;
+  const cell = coachCellFromPointerTarget(event.target);
+  if (!cell) return;
+  const nextCell = coachSelectionCell(cell);
+  selection = event.shiftKey && selection.anchor
+    ? { anchor: selection.anchor, focus: nextCell }
+    : { anchor: nextCell, focus: nextCell };
+  coachPointerSelection = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    dragging: false
+  };
+  repaintCoachSelection();
+};
+
+const updateCoachPointerSelection = (event) => {
+  if (!coachPointerSelection || event.pointerId !== coachPointerSelection.pointerId) return;
+  if ((event.buttons & 1) === 0) {
+    finishCoachPointerSelection();
+    return;
+  }
+  if (!coachPointerSelection.dragging) {
+    const distance = Math.hypot(
+      event.clientX - coachPointerSelection.startX,
+      event.clientY - coachPointerSelection.startY
+    );
+    if (distance < 5) return;
+    coachPointerSelection.dragging = true;
+    document.body.classList.add("is-drag-selecting");
+  }
+  event.preventDefault();
+  const hitTarget = document.elementFromPoint(event.clientX, event.clientY);
+  const cell = coachCellFromPointerTarget(hitTarget);
+  if (!cell) return;
+  const nextCell = coachSelectionCell(cell);
+  if (selection.focus?.rowId === nextCell.rowId
+    && selection.focus?.columnKey === nextCell.columnKey) return;
+  selection = { anchor: selection.anchor ?? nextCell, focus: nextCell };
+  repaintCoachSelection();
+};
+
+const bindCoachPointerSelection = () => {
+  const grid = document.querySelector(".coach-grid");
+  grid.addEventListener("pointerdown", beginCoachPointerSelection);
+  grid.addEventListener("click", (event) => {
+    if (!suppressCoachGridClick) return;
+    suppressCoachGridClick = false;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  document.addEventListener("pointermove", updateCoachPointerSelection, { passive: false });
+  document.addEventListener("pointerup", (event) => {
+    if (!coachPointerSelection || event.pointerId !== coachPointerSelection.pointerId) return;
+    finishCoachPointerSelection({ suppressClick: true });
   });
+  document.addEventListener("pointercancel", (event) => {
+    if (!coachPointerSelection || event.pointerId !== coachPointerSelection.pointerId) return;
+    finishCoachPointerSelection();
+  });
+};
+
+const bindCoachGridEvents = () => {
 
   document.querySelectorAll(".grid-cell input").forEach((input) => {
     input.addEventListener("focus", () => {
@@ -1434,6 +1512,45 @@ const removeSelectedSeries = () => {
     );
   } catch (error) {
     showToast(error.message);
+  }
+};
+
+const removeSelectedExercise = () => {
+  if (!prepareCoachCommand()) return;
+  const row = selectedCoachRow();
+  if (!row) return;
+  const seriesCount = selectedSession().rows.filter(
+    (candidate) => candidate.plannedExerciseId === row.plannedExerciseId
+  ).length;
+  const confirmed = window.confirm(
+    `Supprimer l’exercice complet « ${row.exerciseName} » et ses ${seriesCount} série${seriesCount > 1 ? "s" : ""} ?\n\nCette action pourra être annulée.`
+  );
+  if (!confirmed) {
+    setCoachActivity(`Suppression annulée : l’exercice « ${row.exerciseName} » est conservé.`);
+    return;
+  }
+  const columnKey = selection.focus?.columnKey ?? "exerciseName";
+  try {
+    const result = removeExercise(
+      coachModel,
+      coachModel.selectedSessionId,
+      row.plannedExerciseId
+    );
+    const nextCell = result.nextRowId ? { rowId: result.nextRowId, columnKey } : null;
+    selection = nextCell
+      ? { anchor: nextCell, focus: nextCell }
+      : { anchor: null, focus: null };
+    const dissolution = result.dissolvedGroup
+      ? " Le superset restant est redevenu un groupe simple."
+      : "";
+    commitCoachModel(
+      result.model,
+      `Exercice « ${row.exerciseName} » et ses ${result.removedCount} série${result.removedCount > 1 ? "s" : ""} supprimés en une action annulable.${dissolution}`,
+      nextCell ? `${nextCell.rowId}::${nextCell.columnKey}` : null
+    );
+  } catch (error) {
+    showToast(error.message);
+    setCoachActivity(`Suppression non appliquée : ${error.message}`);
   }
 };
 
@@ -1862,6 +1979,7 @@ const syncBulkEditor = () => {
 
 const bindStaticEvents = () => {
   window.addEventListener("hashchange", route);
+  bindCoachPointerSelection();
   byId("bulk-field").addEventListener("change", syncBulkEditor);
   byId("undo-action").addEventListener("click", () => {
     if (!undoStack.length) return;
@@ -1895,6 +2013,7 @@ const bindStaticEvents = () => {
   byId("insert-series-before").addEventListener("click", () => insertSelectedSeries("before"));
   byId("insert-series-after").addEventListener("click", () => insertSelectedSeries("after"));
   byId("remove-series").addEventListener("click", removeSelectedSeries);
+  byId("remove-exercise").addEventListener("click", removeSelectedExercise);
   byId("copy-selection").addEventListener("click", () => {
     const clipboard = copyCoachSelection();
     if (clipboard) publishCoachClipboardText(clipboard);
@@ -1907,15 +2026,6 @@ const bindStaticEvents = () => {
     commitCoachModel(
       duplicateExercise(coachModel, coachModel.selectedSessionId, row.plannedExerciseId),
       `Exercice « ${row.exerciseName} » dupliqué avec de nouveaux identifiants.`
-    );
-  });
-  byId("duplicate-group").addEventListener("click", () => {
-    if (!prepareCoachCommand()) return;
-    const row = selectedCoachRow();
-    if (!row) return;
-    commitCoachModel(
-      duplicateGroup(coachModel, coachModel.selectedSessionId, row.groupId),
-      `${row.groupType === "superset" ? "Superset" : "Groupe"} ${row.groupLabel} dupliqué atomiquement.`
     );
   });
   byId("duplicate-session").addEventListener("click", () => {

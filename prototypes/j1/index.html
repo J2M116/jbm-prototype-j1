@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="description" content="Prototype J1 des interfaces coach et client de JBM.">
     <title>JBM — Prototype J1</title>
-    <link rel="stylesheet" href="./styles.css?v=20260809.1">
+    <link rel="stylesheet" href="./styles.css?v=20260810.2">
   </head>
   <body>
     <header class="app-header">
@@ -21,7 +21,7 @@
         <a class="view-tab" data-view-link="coach" href="#coach">Coach · Web</a>
         <a class="view-tab" data-view-link="client" href="#client">Client · Mobile</a>
       </nav>
-      <span class="prototype-pill">Prototype J1 · build 2026-08-09.1 · données fictives</span>
+      <span class="prototype-pill">Prototype J1 · build 2026-08-10.2 · données fictives</span>
     </header>
 
     <main>
@@ -85,7 +85,7 @@
               <span class="toolbar-label">Série</span>
               <button id="insert-series-before" class="tool-button" type="button">＋ Avant</button>
               <button id="insert-series-after" class="tool-button" type="button">＋ Après</button>
-              <button id="remove-series" class="tool-button tool-button-danger" type="button">− Supprimer</button>
+              <button id="remove-series" class="tool-button tool-button-danger" type="button" aria-label="Supprimer la série">− Supprimer</button>
             </div>
             <div class="toolbar-divider" aria-hidden="true"></div>
             <div class="toolbar-group">
@@ -95,9 +95,9 @@
             </div>
             <div class="toolbar-divider" aria-hidden="true"></div>
             <div class="toolbar-group">
-              <span class="toolbar-label">Dupliquer</span>
-              <button id="duplicate-exercise" class="tool-button" type="button">Exercice complet</button>
-              <button id="duplicate-group" class="tool-button" type="button">Groupe / superset</button>
+              <span class="toolbar-label">Exercice complet</span>
+              <button id="duplicate-exercise" class="tool-button" type="button" aria-label="Dupliquer l’exercice complet">Dupliquer</button>
+              <button id="remove-exercise" class="tool-button tool-button-danger" type="button" aria-label="Supprimer l’exercice complet">Supprimer</button>
             </div>
             <div class="toolbar-divider" aria-hidden="true"></div>
             <form id="bulk-edit-form" class="toolbar-group bulk-form">
@@ -123,7 +123,7 @@
             <div class="grid-caption">
               <div>
                 <h3 id="grid-heading">Prescription structurée</h3>
-                <p>Maj + clic sélectionne une plage. ⌘/Ctrl + C puis ⌘/Ctrl + V la recopie.</p>
+                <p>Glissez à la souris, ou utilisez Maj + clic, pour sélectionner une plage. ⌘/Ctrl + C puis ⌘/Ctrl + V la recopie.</p>
                 <p>Outils : utilisez ▾ pour choisir jusqu’à 6 valeurs, ou séparez-les par « ; ». Technique : facultative.</p>
               </div>
               <div class="grid-summaries">
@@ -136,7 +136,7 @@
             <div class="grid-scroll" tabindex="-1">
               <table class="coach-grid" role="grid" aria-colcount="9" aria-describedby="grid-instructions">
                 <caption id="grid-instructions" class="sr-only">
-                  Grille de prescription. Utilisez les flèches pour naviguer, Maj plus clic pour étendre la sélection,
+                  Grille de prescription. Glissez à la souris, ou utilisez les flèches et Maj plus clic, pour étendre la sélection,
                   puis Commande ou Contrôle C et V pour copier et coller un rectangle de cellules.
                 </caption>
                 <thead id="coach-grid-head"></thead>
@@ -399,6 +399,6 @@
     <datalist id="rest-preset-options"></datalist>
     <datalist id="technique-options"></datalist>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-    <script type="module" src="./app.js?v=20260809.1"></script>
+    <script type="module" src="./app.js?v=20260810.2"></script>
   </body>
 </html>

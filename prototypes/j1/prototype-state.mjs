@@ -380,6 +380,45 @@ export const insertSeriesAtSelection = (model, sessionId, rowId, position = "aft
   };
 };
 
+export const removeExercise = (model, sessionId, plannedExerciseId) => {
+  const sourceSession = model.sessions.find((candidate) => candidate.id === sessionId);
+  if (!sourceSession) throw new Error("Séance introuvable");
+  const sourceRows = sourceSession.rows.filter(
+    (row) => row.plannedExerciseId === plannedExerciseId
+  );
+  if (sourceRows.length === 0) throw new Error("Exercice introuvable");
+
+  const removedIds = new Set(sourceRows.map((row) => row.id));
+  const affectedGroupIds = new Set(sourceRows.map((row) => row.groupId));
+  const firstRemovedIndex = Math.min(
+    ...sourceRows.map((row) => sourceSession.rows.findIndex((candidate) => candidate.id === row.id))
+  );
+  const next = clone(model);
+  const session = next.sessions.find((candidate) => candidate.id === sessionId);
+  session.rows = session.rows.filter((row) => !removedIds.has(row.id));
+
+  let dissolvedGroup = false;
+  affectedGroupIds.forEach((groupId) => {
+    const remainingGroupRows = session.rows.filter((row) => row.groupId === groupId);
+    const remainingExerciseIds = new Set(
+      remainingGroupRows.map((row) => row.plannedExerciseId)
+    );
+    if (remainingExerciseIds.size !== 1) return;
+    if (remainingGroupRows.some((row) => row.groupType !== "simple")) {
+      dissolvedGroup = true;
+    }
+    remainingGroupRows.forEach((row) => { row.groupType = "simple"; });
+  });
+
+  const nextRow = session.rows[Math.min(firstRemovedIndex, session.rows.length - 1)] ?? null;
+  return {
+    model: next,
+    removedCount: sourceRows.length,
+    dissolvedGroup,
+    nextRowId: nextRow?.id ?? null
+  };
+};
+
 export const removeSeries = (
   model,
   sessionId,

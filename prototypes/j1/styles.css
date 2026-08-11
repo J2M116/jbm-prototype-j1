@@ -876,6 +876,12 @@ main,
   box-shadow: inset 0 0 0 3px var(--green-700);
 }
 
+body.is-drag-selecting,
+body.is-drag-selecting * {
+  cursor: cell !important;
+  user-select: none !important;
+}
+
 .coach-grid tr.group-start:not(:first-child) td {
   border-top: 3px solid var(--ivory-300);
 }
@@ -2533,7 +2539,7 @@ main,
     display: none;
   }
 
-  .tool-button-danger {
+  #remove-series {
     grid-column: 1 / -1;
   }
 
