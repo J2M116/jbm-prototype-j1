@@ -291,6 +291,120 @@ const nextGroupLabel = (rows) => {
   return `G${labels.size + 1}`;
 };
 
+const exerciseGroupBlocks = (session) => {
+  const blocks = [];
+  const seenGroupIds = new Set();
+  session.rows.forEach((row, index) => {
+    const current = blocks.at(-1);
+    if (current?.groupId === row.groupId) {
+      current.endIndex = index;
+      return;
+    }
+    if (seenGroupIds.has(row.groupId)) {
+      throw new Error(`Le groupe ${row.groupLabel || row.groupId} n'est pas contigu`);
+    }
+    seenGroupIds.add(row.groupId);
+    blocks.push({
+      groupId: row.groupId,
+      startIndex: index,
+      endIndex: index,
+      firstRowId: row.id
+    });
+  });
+  return blocks;
+};
+
+const excelGroupLabel = (zeroBasedIndex) => {
+  let ordinal = zeroBasedIndex + 1;
+  let label = "";
+  while (ordinal > 0) {
+    ordinal -= 1;
+    label = String.fromCharCode(65 + (ordinal % 26)) + label;
+    ordinal = Math.floor(ordinal / 26);
+  }
+  return label;
+};
+
+export const moveExerciseGroup = (model, sessionId, groupId, direction) => {
+  const session = model.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) throw new Error("Séance introuvable");
+  if (!["up", "down"].includes(direction)) throw new Error("Direction de déplacement inconnue");
+  const blocks = exerciseGroupBlocks(session);
+  const fromGroupIndex = blocks.findIndex((block) => block.groupId === groupId);
+  if (fromGroupIndex < 0) throw new Error("Groupe introuvable");
+  const offset = direction === "up" ? -1 : 1;
+  const toGroupIndex = fromGroupIndex + offset;
+  const sourceBlock = blocks[fromGroupIndex];
+  if (toGroupIndex < 0 || toGroupIndex >= blocks.length) {
+    return {
+      model,
+      moved: false,
+      groupId,
+      direction,
+      fromGroupIndex,
+      toGroupIndex: fromGroupIndex,
+      firstRowId: sourceBlock.firstRowId
+    };
+  }
+
+  const orderedBlocks = blocks.map((block) => (
+    session.rows.slice(block.startIndex, block.endIndex + 1)
+  ));
+  [orderedBlocks[fromGroupIndex], orderedBlocks[toGroupIndex]] = [
+    orderedBlocks[toGroupIndex],
+    orderedBlocks[fromGroupIndex]
+  ];
+  const next = clone(model);
+  const nextSession = next.sessions.find((candidate) => candidate.id === sessionId);
+  nextSession.rows = clone(orderedBlocks.flat());
+  return {
+    model: next,
+    moved: true,
+    groupId,
+    direction,
+    fromGroupIndex,
+    toGroupIndex,
+    firstRowId: sourceBlock.firstRowId
+  };
+};
+
+export const renumberExerciseGroupLabels = (model, sessionId) => {
+  const session = model.sessions.find((candidate) => candidate.id === sessionId);
+  if (!session) throw new Error("Séance introuvable");
+  const blocks = exerciseGroupBlocks(session);
+  const changedBlocks = blocks.filter((block, index) => {
+    const expectedLabel = excelGroupLabel(index);
+    return session.rows
+      .slice(block.startIndex, block.endIndex + 1)
+      .some((row) => row.groupLabel !== expectedLabel);
+  });
+  if (changedBlocks.length === 0) {
+    return {
+      model,
+      changed: false,
+      changedGroupCount: 0,
+      groupCount: blocks.length,
+      firstRowId: null
+    };
+  }
+
+  const labelsByGroupId = new Map(
+    blocks.map((block, index) => [block.groupId, excelGroupLabel(index)])
+  );
+  const next = clone(model);
+  const nextSession = next.sessions.find((candidate) => candidate.id === sessionId);
+  nextSession.rows.forEach((row) => {
+    row.groupLabel = labelsByGroupId.get(row.groupId);
+  });
+  return {
+    model: next,
+    changed: true,
+    changedGroupCount: changedBlocks.length,
+    groupCount: blocks.length,
+    firstRowId: changedBlocks[0].firstRowId
+  };
+};
+
 export const duplicateExercise = (model, sessionId, plannedExerciseId) => {
   const next = clone(model);
   const session = next.sessions.find((candidate) => candidate.id === sessionId);
@@ -446,43 +560,77 @@ export const insertExerciseWithFirstSeries = (model, sessionId) => {
   };
 };
 
-export const insertExercisesInEmptySession = (
-  model,
-  sessionId,
+const normalizeExerciseInsertion = (
   exerciseNames,
   { setsPerExercise = 2, targetReps = "9-12", targetRir = 0 } = {}
 ) => {
-  const sourceSession = model.sessions.find((candidate) => candidate.id === sessionId);
-  if (!sourceSession) throw new Error("Séance introuvable");
-  if (sourceSession.rows.length !== 0) {
-    throw new Error("La création groupée exige une séance vierge");
-  }
   if (!Array.isArray(exerciseNames) || exerciseNames.length === 0) {
     throw new Error("Sélectionnez au moins un exercice");
   }
-  const normalizedExercises = exerciseNames.map((exerciseName) => (
+  const exercises = exerciseNames.map((exerciseName) => (
     normalizeCoachValue("exerciseName", exerciseName)
   ));
-  const exerciseIdentities = normalizedExercises.map(catalogSearchKey);
+  const exerciseIdentities = exercises.map(catalogSearchKey);
   if (new Set(exerciseIdentities).size !== exerciseIdentities.length) {
     throw new Error("Un exercice ne peut être sélectionné qu'une seule fois");
   }
-  const normalizedSetCount = Number(setsPerExercise);
-  if (!Number.isInteger(normalizedSetCount) || normalizedSetCount < 1 || normalizedSetCount > 10) {
+  const setCount = Number(setsPerExercise);
+  if (!Number.isInteger(setCount) || setCount < 1 || setCount > 10) {
     throw new Error("Le nombre de séries par exercice doit être un entier entre 1 et 10");
   }
-  const normalizedTargetReps = normalizeCoachValue("targetReps", targetReps);
-  const normalizedTargetRir = normalizeCoachValue("targetRir", targetRir);
+  return {
+    exercises,
+    setCount,
+    targetReps: normalizeCoachValue("targetReps", targetReps),
+    targetRir: normalizeCoachValue("targetRir", targetRir)
+  };
+};
+
+export const insertExercises = (
+  model,
+  sessionId,
+  exerciseNames,
+  {
+    afterPlannedExerciseId = null,
+    setsPerExercise = 2,
+    targetReps = "9-12",
+    targetRir = 0
+  } = {}
+) => {
+  const sourceSession = model.sessions.find((candidate) => candidate.id === sessionId);
+  if (!sourceSession) throw new Error("Séance introuvable");
+  const normalized = normalizeExerciseInsertion(exerciseNames, {
+    setsPerExercise,
+    targetReps,
+    targetRir
+  });
 
   const next = clone(model);
   const session = next.sessions.find((candidate) => candidate.id === sessionId);
+  const anchorRow = session.rows.find(
+    (row) => row.plannedExerciseId === afterPlannedExerciseId
+  );
+  const insertionAfterGroup = Boolean(anchorRow && anchorRow.groupType !== "simple");
+  const matchingIndexes = session.rows
+    .map((row, index) => anchorRow && (
+      insertionAfterGroup
+        ? row.groupId === anchorRow.groupId
+        : row.plannedExerciseId === anchorRow.plannedExerciseId
+    ) ? index : -1)
+    .filter((index) => index >= 0);
+  const insertionIndex = matchingIndexes.length > 0
+    ? Math.max(...matchingIndexes) + 1
+    : session.rows.length;
+  let nextInsertionIndex = insertionIndex;
   let firstRowId = null;
-  normalizedExercises.forEach((exerciseName) => {
+  let firstPlannedExerciseId = null;
+  normalized.exercises.forEach((exerciseName) => {
     const exerciseOrdinal = nextInsertedSeriesOrdinal(next);
     const plannedExerciseId = `insert-exercise:${exerciseOrdinal}`;
     const groupId = `insert-group:${exerciseOrdinal}`;
     const groupLabel = session.rows.length === 0 ? "A" : nextGroupLabel(session.rows);
-    for (let setRank = 1; setRank <= normalizedSetCount; setRank += 1) {
+    firstPlannedExerciseId ??= plannedExerciseId;
+    for (let setRank = 1; setRank <= normalized.setCount; setRank += 1) {
       const setOrdinal = nextInsertedSeriesOrdinal(next);
       const row = {
         id: `coach-row:insert:${setOrdinal}`,
@@ -494,22 +642,40 @@ export const insertExercisesInEmptySession = (
         exerciseName,
         tools: [],
         setRank,
-        targetReps: normalizedTargetReps,
-        targetRir: normalizedTargetRir,
+        targetReps: normalized.targetReps,
+        targetRir: normalized.targetRir,
         tempo: "Hérité",
         restSeconds: 60,
         technique: ""
       };
-      session.rows.push(row);
+      session.rows.splice(nextInsertionIndex, 0, row);
+      nextInsertionIndex += 1;
       firstRowId ??= row.id;
     }
   });
   return {
     model: next,
-    exerciseCount: normalizedExercises.length,
-    seriesCount: normalizedExercises.length * normalizedSetCount,
-    firstRowId
+    exerciseCount: normalized.exercises.length,
+    seriesCount: normalized.exercises.length * normalized.setCount,
+    firstRowId,
+    firstPlannedExerciseId,
+    insertionIndex,
+    insertionAfterGroup
   };
+};
+
+export const insertExercisesInEmptySession = (
+  model,
+  sessionId,
+  exerciseNames,
+  options = {}
+) => {
+  const sourceSession = model.sessions.find((candidate) => candidate.id === sessionId);
+  if (!sourceSession) throw new Error("Séance introuvable");
+  if (sourceSession.rows.length !== 0) {
+    throw new Error("La création groupée exige une séance vierge");
+  }
+  return insertExercises(model, sessionId, exerciseNames, options);
 };
 
 export const insertSeriesAtSelection = (model, sessionId, rowId, position = "after") => {

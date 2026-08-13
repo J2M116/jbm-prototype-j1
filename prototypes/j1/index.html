@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="description" content="Prototype J1 des interfaces coach et client de JBM.">
     <title>JBM — Prototype J1</title>
-    <link rel="stylesheet" href="./styles.css?v=20260811.5">
+    <link rel="stylesheet" href="./styles.css?v=20260813.1">
   </head>
   <body>
     <header class="app-header">
@@ -21,7 +21,7 @@
         <a class="view-tab" data-view-link="coach" href="#coach">Coach · Web</a>
         <a class="view-tab" data-view-link="client" href="#client">Client · Mobile</a>
       </nav>
-      <span class="prototype-pill">Prototype J1 · build 2026-08-11.5 · données fictives</span>
+      <span class="prototype-pill">Prototype J1 · build 2026-08-13.1 · données fictives</span>
     </header>
 
     <main>
@@ -96,6 +96,7 @@
             <div class="toolbar-divider" aria-hidden="true"></div>
             <div class="toolbar-group">
               <span class="toolbar-label">Exercice complet</span>
+              <button id="add-exercises" class="tool-button" type="button" aria-label="Ajouter un ou plusieurs exercices" disabled>＋ Ajouter</button>
               <button id="duplicate-exercise" class="tool-button" type="button" aria-label="Dupliquer l’exercice complet">Dupliquer</button>
               <button id="remove-exercise" class="tool-button tool-button-danger" type="button" aria-label="Supprimer l’exercice complet">Supprimer</button>
             </div>
@@ -289,6 +290,26 @@
       </section>
     </main>
 
+    <dialog id="group-move-dialog" class="prototype-dialog group-move-dialog" aria-labelledby="group-move-title">
+      <form method="dialog" class="dialog-header">
+        <div>
+          <p class="eyebrow">Ordre de la séance</p>
+          <h2 id="group-move-title">Déplacer un groupe</h2>
+          <p id="group-move-description">Toutes les séries du bloc restent ensemble.</p>
+        </div>
+        <button class="icon-button" value="cancel" aria-label="Fermer le menu de déplacement">×</button>
+      </form>
+      <div class="group-move-actions" role="group" aria-label="Commandes de réordonnancement">
+        <button id="move-group-up" class="button button-secondary" type="button"><span aria-hidden="true">↑</span> Monter d’un groupe</button>
+        <button id="move-group-down" class="button button-secondary" type="button"><span aria-hidden="true">↓</span> Descendre d’un groupe</button>
+        <button id="renumber-groups" class="button button-ghost" type="button">Renuméroter les groupes A, B, C…</button>
+      </div>
+      <p id="group-move-status" class="group-move-status" aria-live="polite">Le menu reste ouvert pour enchaîner plusieurs déplacements.</p>
+      <div class="dialog-actions">
+        <button id="cancel-group-move" class="button button-secondary" type="button">Fermer</button>
+      </div>
+    </dialog>
+
     <dialog id="exercise-picker-dialog" class="prototype-dialog tool-picker-dialog" aria-labelledby="exercise-picker-title">
       <form method="dialog" class="dialog-header">
         <div>
@@ -318,8 +339,8 @@
       <form method="dialog" class="dialog-header">
         <div>
           <p class="eyebrow">Création rapide</p>
-          <h2 id="exercise-builder-title">Composer une séance vierge</h2>
-          <p>Sélectionnez plusieurs exercices par groupe musculaire. Ils seront ajoutés dans l’ordre du catalogue, en une seule action annulable.</p>
+          <h2 id="exercise-builder-title">Ajouter des exercices</h2>
+          <p id="exercise-builder-context">Sélectionnez plusieurs exercices par groupe musculaire. Ils seront ajoutés dans l’ordre du catalogue, en une seule action annulable.</p>
         </div>
         <button class="icon-button" value="cancel" aria-label="Fermer sans créer">×</button>
       </form>
@@ -505,7 +526,7 @@
         const loadPrototypeModule = () => {
           startLoadWatch();
           root.dataset.prototypeModuleState = "loading";
-          import("./app.js?v=20260811.5")
+          import("./app.js?v=20260813.1")
             .then(() => {
               root.dataset.prototypeModuleState = "loaded";
             })

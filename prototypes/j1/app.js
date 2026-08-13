@@ -13,8 +13,9 @@ import {
   duplicateExercise,
   duplicateSession,
   groupedCatalogPickerOptions,
-  insertExercisesInEmptySession,
+  insertExercises,
   insertSeriesAtSelection,
+  moveExerciseGroup,
   normalizeCoachValue,
   formatRestDuration,
   parseRepetitionTarget,
@@ -22,6 +23,7 @@ import {
   parseSpreadsheetPaste,
   pasteCoachRectangle,
   rectangularCellIds,
+  renumberExerciseGroupLabels,
   removeExercise,
   removeSeries,
   restoreClientPrototype,
@@ -31,7 +33,7 @@ import {
   updateCoachCell,
   upgradeCoachDraftModel,
   validateCatalogMuscleGroups
-} from "./prototype-state.mjs?v=20260811.5";
+} from "./prototype-state.mjs?v=20260813.1";
 
 const FIXTURE_URL = "../../sample-data/jbm-alpha.fixture.json";
 const PRESCRIPTION_CATALOG_URL = "../../sample-data/jbm-initial-prescription-catalog.json";
@@ -92,6 +94,7 @@ let coachGridRefreshTimeout = null;
 let programmaticCoachFocusCellId = null;
 let coachPointerSelection = null;
 let suppressCoachGridClick = false;
+let groupMoveContext = null;
 
 const showToast = (message) => {
   const toast = byId("toast");
@@ -354,6 +357,7 @@ const syncCoachActionState = () => {
     "remove-exercise",
     "duplicate-exercise"
   ].forEach((id) => { byId(id).disabled = !hasRows; });
+  byId("add-exercises").disabled = !session;
   ["bulk-field", "bulk-value", "apply-bulk-edit"].forEach((id) => {
     byId(id).disabled = !hasRows;
   });
@@ -429,12 +433,155 @@ const catalogPickerPresentation = (field, row) => ({
   }
 })[field] ?? null;
 
+const exerciseGroupBlocksForSession = (session) => {
+  const blocks = [];
+  session.rows.forEach((row) => {
+    const current = blocks.at(-1);
+    if (current?.groupId === row.groupId) {
+      current.rows.push(row);
+      return;
+    }
+    blocks.push({ groupId: row.groupId, rows: [row] });
+  });
+  return blocks;
+};
+
+const groupMoveAccessibleLabel = (block) => {
+  const exerciseCount = new Set(block.rows.map((row) => row.plannedExerciseId)).size;
+  const seriesCount = block.rows.length;
+  const first = block.rows[0];
+  const kind = first.groupType === "simple"
+    ? `l’exercice ${first.exerciseName}`
+    : `le groupe ${first.groupLabel}, ${exerciseCount} exercices`;
+  return `Déplacer ${kind}, ${seriesCount} série${seriesCount > 1 ? "s" : ""}`;
+};
+
+const closeGroupMoveMenu = () => {
+  if (byId("group-move-dialog").open) byId("group-move-dialog").close();
+};
+
+const syncGroupMoveMenu = (preferredDirection = null) => {
+  if (!groupMoveContext) return null;
+  const blocks = exerciseGroupBlocksForSession(selectedSession());
+  const blockIndex = blocks.findIndex((block) => block.groupId === groupMoveContext.groupId);
+  if (blockIndex < 0) return null;
+  const block = blocks[blockIndex];
+  const first = block.rows[0];
+  const exerciseCount = new Set(block.rows.map((row) => row.plannedExerciseId)).size;
+  groupMoveContext = {
+    ...groupMoveContext,
+    firstRowId: first.id,
+    label: first.groupLabel,
+    blockIndex,
+    blockCount: blocks.length
+  };
+  byId("group-move-title").textContent = first.groupType === "simple"
+    ? `Déplacer « ${first.exerciseName} »`
+    : `Déplacer le groupe ${first.groupLabel}`;
+  byId("group-move-description").textContent = first.groupType === "simple"
+    ? `${block.rows.length} série(s) seront déplacées ensemble. Le libellé ${first.groupLabel} sera conservé.`
+    : `${exerciseCount} exercices et ${block.rows.length} séries seront déplacés sans scinder le groupe. Le libellé ${first.groupLabel} sera conservé.`;
+  const upButton = byId("move-group-up");
+  const downButton = byId("move-group-down");
+  upButton.disabled = blockIndex === 0;
+  downButton.disabled = blockIndex === blocks.length - 1;
+  byId("renumber-groups").disabled = blocks.length === 0;
+  if (preferredDirection) {
+    const preferred = preferredDirection === "up" ? upButton : downButton;
+    const opposite = preferredDirection === "up" ? downButton : upButton;
+    (preferred.disabled ? opposite : preferred).focus({ preventScroll: true });
+  }
+  return block;
+};
+
+const openGroupMoveMenu = (rowId, groupId) => {
+  if (!prepareCoachCommand()) return;
+  const session = selectedSession();
+  const blocks = exerciseGroupBlocksForSession(session);
+  const blockIndex = blocks.findIndex((block) => block.groupId === groupId);
+  if (blockIndex < 0) return;
+  const block = blocks[blockIndex];
+  const first = block.rows[0];
+  groupMoveContext = {
+    groupId,
+    firstRowId: first.id,
+    label: first.groupLabel,
+    blockIndex,
+    blockCount: blocks.length
+  };
+  syncGroupMoveMenu();
+  byId("group-move-status").textContent = "Le menu reste ouvert pour enchaîner plusieurs déplacements.";
+  byId("group-move-dialog").showModal();
+  const firstAction = blockIndex > 0 ? byId("move-group-up") : byId("move-group-down");
+  (firstAction.disabled ? byId("renumber-groups") : firstAction).focus({ preventScroll: true });
+};
+
+const applyGroupMove = (direction) => {
+  if (!groupMoveContext || !prepareCoachCommand()) return;
+  try {
+    const result = moveExerciseGroup(
+      coachModel,
+      coachModel.selectedSessionId,
+      groupMoveContext.groupId,
+      direction
+    );
+    if (!result.moved) {
+      setCoachActivity(direction === "up"
+        ? "Ce bloc est déjà le premier de la séance."
+        : "Ce bloc est déjà le dernier de la séance.");
+      return;
+    }
+    const nextCell = { rowId: result.firstRowId, columnKey: "groupLabel" };
+    selection = { anchor: nextCell, focus: nextCell };
+    const movedLabel = groupMoveContext.label;
+    const committed = commitCoachModel(
+      result.model,
+      `Groupe ${movedLabel} déplacé ${direction === "up" ? "vers le haut" : "vers le bas"}. Les libellés sont conservés ; la renumérotation reste une commande séparée.`,
+      false
+    );
+    if (!committed) return;
+    renderCoachGrid(false);
+    syncGroupMoveMenu(direction);
+    byId("group-move-status").textContent = `Groupe ${movedLabel} déplacé d’un cran ${direction === "up" ? "vers le haut" : "vers le bas"}. Vous pouvez continuer.`;
+  } catch (error) {
+    showToast(error.message);
+    setCoachActivity(`Déplacement refusé sans modification : ${error.message}`);
+  }
+};
+
+const applyGroupRenumbering = () => {
+  if (!groupMoveContext || !prepareCoachCommand()) return;
+  try {
+    const result = renumberExerciseGroupLabels(coachModel, coachModel.selectedSessionId);
+    if (!result.changed) {
+      setCoachActivity("Les groupes sont déjà numérotés dans l’ordre A, B, C…");
+      closeGroupMoveMenu();
+      return;
+    }
+    const nextCell = { rowId: result.firstRowId, columnKey: "groupLabel" };
+    selection = { anchor: nextCell, focus: nextCell };
+    closeGroupMoveMenu();
+    groupMoveContext = null;
+    commitCoachModel(
+      result.model,
+      `${result.changedGroupCount} groupe(s) renuméroté(s) dans l’ordre A, B, C… en une action annulable.`,
+      `${result.firstRowId}::groupLabel`
+    );
+  } catch (error) {
+    showToast(error.message);
+    setCoachActivity(`Renumérotation refusée sans modification : ${error.message}`);
+  }
+};
+
 const renderCoachGrid = (focusCellId = null) => {
   const startedAt = performance.now();
   const session = selectedSession();
   ensureSelection();
   const selected = new Set(selectedCellIds());
   const previousGroupByIndex = session.rows.map((row, index) => index > 0 ? session.rows[index - 1].groupId : null);
+  const groupBlocksById = new Map(
+    exerciseGroupBlocksForSession(session).map((block) => [block.groupId, block])
+  );
 
   byId("coach-grid-body").innerHTML = session.rows.length === 0
     ? `<tr class="grid-empty" role="row">
@@ -450,7 +597,8 @@ const renderCoachGrid = (focusCellId = null) => {
     </tr>`
     : session.rows.map((row, rowIndex) => {
     const groupStart = rowIndex === 0 || previousGroupByIndex[rowIndex] !== row.groupId;
-    return `<tr role="row" class="${groupStart ? "group-start" : ""}" data-row-id="${escapeHtml(row.id)}">${COACH_COLUMNS.map((column) => {
+    const groupBlock = groupStart ? groupBlocksById.get(row.groupId) : null;
+    return `<tr role="row" class="${groupStart ? "group-start" : ""}" data-row-id="${escapeHtml(row.id)}" data-group-id="${escapeHtml(row.groupId)}" data-group-type="${escapeHtml(row.groupType)}">${COACH_COLUMNS.map((column) => {
       const cellId = `${row.id}::${column.key}`;
       const isSelected = selected.has(cellId);
       const isAnchor = selection.anchor?.rowId === row.id && selection.anchor?.columnKey === column.key;
@@ -485,10 +633,17 @@ const renderCoachGrid = (focusCellId = null) => {
             data-catalog-picker-field="${escapeHtml(column.key)}"
             data-catalog-picker-row-id="${escapeHtml(row.id)}" title="${escapeHtml(picker.title)}">⌄</button></div>`
         : inputHtml;
+      const moveHandleHtml = groupStart && column.key === "groupLabel"
+        ? `<button class="group-move-handle" type="button" aria-haspopup="dialog"
+            aria-label="${escapeHtml(groupMoveAccessibleLabel(groupBlock))}"
+            title="Déplacer ce bloc ou renuméroter les groupes"
+            data-group-move-handle data-group-id="${escapeHtml(row.groupId)}"
+            data-row-id="${escapeHtml(row.id)}"><span aria-hidden="true">⠿</span></button>`
+        : "";
       return `<td role="gridcell" class="grid-cell ${isSelected ? "is-selected" : ""} ${isAnchor ? "is-anchor" : ""}"
         data-cell-id="${escapeHtml(cellId)}" data-row-id="${escapeHtml(row.id)}"
         data-column-key="${escapeHtml(column.key)}" aria-selected="${isSelected}">
-        ${editorHtml}
+        ${moveHandleHtml}${editorHtml}
       </td>`;
     }).join("")}</tr>`;
   }).join("");
@@ -893,20 +1048,12 @@ const groupedExerciseCatalogHtml = (groups, context, mode) => groups.map((group)
       : `<input type="checkbox" value="${escapeHtml(option.value)}" ${option.selected ? "checked" : ""}>`;
     return groupedExerciseOptionHtml(option, inputHtml);
   }).join("");
-  const allVisibleOptionsSelected = group.options.every((option) => option.selected);
-  const groupActionTarget = context.query.trim() ? "ces résultats" : "ce groupe";
-  const groupAction = mode === "multiple"
-    ? `<button class="muscle-group-select" type="button" data-builder-toggle-group="${escapeHtml(group.name)}">
-        ${allVisibleOptionsSelected ? `Retirer ${groupActionTarget}` : `Sélectionner ${groupActionTarget}`}
-      </button>`
-    : "";
   return `<details class="muscle-group" data-muscle-group="${escapeHtml(group.name)}" ${isOpen ? "open" : ""}>
     <summary>
       <span>${escapeHtml(group.name)}</span>
       <span class="muscle-group-count">${group.options.length} exercice${group.options.length > 1 ? "s" : ""}</span>
     </summary>
     <div class="muscle-group-body">
-      ${groupAction}
       <div class="muscle-group-options">${options}</div>
     </div>
   </details>`;
@@ -1077,7 +1224,7 @@ const syncExerciseBuilderSummary = (visibleOptionCount = null, visibleGroupCount
   applyButton.disabled = values.length === 0 || !validDefaults;
   applyButton.textContent = values.length === 0
     ? "Choisir au moins un exercice"
-    : `Créer ${values.length} exercice${values.length > 1 ? "s" : ""} · ${seriesCount} série${seriesCount > 1 ? "s" : ""}`;
+    : `${exerciseBuilderContext.initiallyEmpty ? "Créer" : "Ajouter"} ${values.length} exercice${values.length > 1 ? "s" : ""} · ${seriesCount} série${seriesCount > 1 ? "s" : ""}`;
   byId("clear-exercise-builder").disabled = values.length === 0;
 };
 
@@ -1122,39 +1269,31 @@ const renderExerciseBuilderOptions = () => {
       checkbox.click();
     });
   });
-  container.querySelectorAll("[data-builder-toggle-group]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const group = groups.find((candidate) => candidate.name === button.dataset.builderToggleGroup);
-      if (!group) return;
-      const groupValues = group.options.map((option) => option.value);
-      const selected = new Set(exerciseBuilderContext.values);
-      const allSelected = groupValues.every((value) => selected.has(value));
-      exerciseBuilderContext.openGroups.add(group.name);
-      groupValues.forEach((value) => {
-        if (allSelected) selected.delete(value);
-        else selected.add(value);
-      });
-      exerciseBuilderContext.values = [...selected];
-      renderExerciseBuilderOptions();
-      const reopenedGroup = [...document.querySelectorAll("#exercise-builder-options details")]
-        .find((details) => details.dataset.muscleGroup === group.name);
-      reopenedGroup?.querySelector("[data-builder-toggle-group]")?.focus({ preventScroll: true });
-    });
-  });
 };
 
 const openExerciseBuilder = () => {
   if (!prepareCoachCommand()) return;
   const session = selectedSession();
-  if (!session || session.rows.length > 0) {
-    showToast("La composition multiple est réservée à une séance vierge.");
-    return;
-  }
+  if (!session) return;
+  const selectedRow = session.rows.find((row) => row.id === selection.focus?.rowId) ?? null;
+  const afterPlannedExerciseId = selectedRow?.plannedExerciseId ?? null;
   exerciseBuilderContext = {
     values: [],
     query: "",
-    openGroups: new Set()
+    openGroups: new Set(),
+    afterPlannedExerciseId,
+    afterExerciseName: selectedRow?.exerciseName ?? null,
+    insertionAfterGroup: Boolean(selectedRow && selectedRow.groupType !== "simple"),
+    initiallyEmpty: session.rows.length === 0
   };
+  byId("exercise-builder-title").textContent = session.rows.length === 0
+    ? "Composer une séance vierge"
+    : "Ajouter des exercices";
+  byId("exercise-builder-context").textContent = selectedRow
+    ? `Les exercices seront insérés après ${selectedRow.groupType === "simple" ? "l’exercice" : "le groupe de"} « ${selectedRow.exerciseName} », dans l’ordre du catalogue et en une seule action annulable.`
+    : session.rows.length === 0
+      ? "Sélectionnez plusieurs exercices par groupe musculaire. Ils seront créés dans l’ordre du catalogue, en une seule action annulable."
+      : "Les exercices seront ajoutés à la fin de la séance, dans l’ordre du catalogue et en une seule action annulable.";
   byId("exercise-builder-search").value = "";
   byId("exercise-builder-series").value = "2";
   byId("exercise-builder-repetitions").value = prescriptionCatalog.repetitionTargets.includes("9-12")
@@ -1177,11 +1316,19 @@ const applyExerciseBuilder = () => {
   const defaults = exerciseBuilderDefaults();
   if (!byId("exercise-builder-series").reportValidity() || exerciseNames.length === 0) return;
   try {
-    const result = insertExercisesInEmptySession(
+    const insertionLabel = exerciseBuilderContext.afterExerciseName
+      ? `après ${exerciseBuilderContext.insertionAfterGroup ? "le groupe de" : "l’exercice"} « ${exerciseBuilderContext.afterExerciseName} »`
+      : exerciseBuilderContext.initiallyEmpty
+        ? "dans la séance vierge"
+        : "à la fin de la séance";
+    const result = insertExercises(
       coachModel,
       coachModel.selectedSessionId,
       exerciseNames,
-      defaults
+      {
+        ...defaults,
+        afterPlannedExerciseId: exerciseBuilderContext.afterPlannedExerciseId
+      }
     );
     const firstCellId = `${result.firstRowId}::exerciseName`;
     selection = {
@@ -1190,13 +1337,13 @@ const applyExerciseBuilder = () => {
     };
     const committed = commitCoachModel(
       result.model,
-      `${result.exerciseCount} exercice(s) et ${result.seriesCount} série(s) créés en une action annulable.`,
+      `${result.exerciseCount} exercice(s) et ${result.seriesCount} série(s) ajoutés en une action annulable.`,
       false
     );
     if (!committed) return;
     closeExerciseBuilder();
     renderCoach(firstCellId);
-    showToast(`${result.exerciseCount} exercice(s) ajoutés dans l’ordre du catalogue.`);
+    showToast(`${result.exerciseCount} exercice(s) ajoutés ${insertionLabel}, dans l’ordre du catalogue.`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erreur inconnue";
     showToast(message);
@@ -1575,6 +1722,22 @@ const bindCoachPointerSelection = () => {
 
 const bindCoachGridEvents = () => {
 
+  document.querySelectorAll("[data-group-move-handle]").forEach((button) => {
+    button.addEventListener("pointerdown", (event) => event.stopPropagation());
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openGroupMoveMenu(button.dataset.rowId, button.dataset.groupId);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab" || event.shiftKey) return;
+      event.preventDefault();
+      document.querySelector(
+        `[data-cell-id="${CSS.escape(`${button.dataset.rowId}::groupLabel`)}"] input`
+      )?.focus({ preventScroll: true });
+    });
+  });
+
   document.querySelectorAll(".grid-cell input").forEach((input) => {
     input.addEventListener("focus", () => {
       const nextCell = { rowId: input.dataset.rowId, columnKey: input.dataset.columnKey };
@@ -1620,6 +1783,20 @@ const bindCoachGridEvents = () => {
     input.addEventListener("keydown", (event) => {
       const navigationKeys = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Tab"]);
       if (!navigationKeys.has(event.key)) return;
+      if (event.key === "Tab"
+        && event.shiftKey
+        && input.dataset.columnKey === "groupLabel") {
+        const handle = document.querySelector(
+          `[data-group-move-handle][data-row-id="${CSS.escape(input.dataset.rowId)}"]`
+        );
+        if (handle) {
+          event.preventDefault();
+          if (!commitCoachInput(input, false)) return;
+          syncCoachInputFromModel(input);
+          handle.focus({ preventScroll: true });
+          return;
+        }
+      }
       if (event.key === "Tab"
         && !event.shiftKey
         && CATALOG_PICKER_FIELDS.has(input.dataset.columnKey)) {
@@ -1789,16 +1966,6 @@ const removeSelectedExercise = () => {
   if (!prepareCoachCommand()) return;
   const row = selectedCoachRow();
   if (!row) return;
-  const seriesCount = selectedSession().rows.filter(
-    (candidate) => candidate.plannedExerciseId === row.plannedExerciseId
-  ).length;
-  const confirmed = window.confirm(
-    `Supprimer l’exercice complet « ${row.exerciseName} » et ses ${seriesCount} série${seriesCount > 1 ? "s" : ""} ?\n\nCette action pourra être annulée.`
-  );
-  if (!confirmed) {
-    setCoachActivity(`Suppression annulée : l’exercice « ${row.exerciseName} » est conservé.`);
-    return;
-  }
   const columnKey = selection.focus?.columnKey ?? "exerciseName";
   try {
     const result = removeExercise(
@@ -2283,6 +2450,7 @@ const bindStaticEvents = () => {
   byId("insert-series-before").addEventListener("click", () => insertSelectedSeries("before"));
   byId("insert-series-after").addEventListener("click", () => insertSelectedSeries("after"));
   byId("remove-series").addEventListener("click", removeSelectedSeries);
+  byId("add-exercises").addEventListener("click", openExerciseBuilder);
   byId("remove-exercise").addEventListener("click", removeSelectedExercise);
   byId("copy-selection").addEventListener("click", () => {
     const clipboard = copyCoachSelection();
@@ -2297,6 +2465,20 @@ const bindStaticEvents = () => {
       duplicateExercise(coachModel, coachModel.selectedSessionId, row.plannedExerciseId),
       `Exercice « ${row.exerciseName} » dupliqué avec de nouveaux identifiants.`
     );
+  });
+  byId("move-group-up").addEventListener("click", () => applyGroupMove("up"));
+  byId("move-group-down").addEventListener("click", () => applyGroupMove("down"));
+  byId("renumber-groups").addEventListener("click", applyGroupRenumbering);
+  byId("cancel-group-move").addEventListener("click", closeGroupMoveMenu);
+  byId("group-move-dialog").addEventListener("close", () => {
+    const firstRowId = groupMoveContext?.firstRowId;
+    groupMoveContext = null;
+    if (firstRowId) renderCoachGrid(`${firstRowId}::groupLabel`);
+  });
+  byId("group-move-dialog").addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    closeGroupMoveMenu();
   });
   byId("duplicate-session").addEventListener("click", () => {
     if (!prepareCoachCommand()) return;
